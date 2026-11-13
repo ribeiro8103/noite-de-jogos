@@ -4,10 +4,10 @@
 (function(){
   const qs = new URLSearchParams(location.search);
   if(qs.get('peerhost')) try{ sessionStorage.setItem('nj-ph', qs.get('peerhost')); }catch(e){}
-  const IS_PORTAL = !/jogos\/[a-z]+/.test(location.pathname);
+  const IS_PORTAL = !/\/jogos\/[a-z]+\//.test(location.pathname);
   let SALA = (qs.get('sala') || (IS_PORTAL ? '' : sessionStorage.getItem('nj-sala')) || '').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,6);
   const IS_HUB = qs.get('tv') === '1' || sessionStorage.getItem('nj-tv-'+SALA) === '1';
-  const GAME = (location.pathname.match(/jogos\/([a-z]+)/)||[])[1] || 'portal';
+  const GAME = (location.pathname.match(/\/jogos\/([a-z]+)\//)||[])[1] || 'portal';
   const BASE = new URL(GAME==='portal' ? './' : '../../', location.href).href;
   if(!SALA && GAME!=='portal'){ location.replace(BASE + '?jogo=' + GAME); return; }
   if(SALA){ sessionStorage.setItem('nj-sala', SALA); if(IS_HUB) sessionStorage.setItem('nj-tv-'+SALA, '1'); }
