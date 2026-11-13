@@ -10,7 +10,7 @@
   const GAME = (location.pathname.match(/\/jogos\/([a-z]+)\//)||[])[1] || 'portal';
   const BASE = new URL(GAME==='portal' ? './' : '../../', location.href).href;
   if(!SALA && GAME!=='portal'){ location.replace(BASE + '?jogo=' + GAME); return; }
-  if(SALA){ sessionStorage.setItem('nj-sala', SALA); if(IS_HUB) sessionStorage.setItem('nj-tv-'+SALA, '1'); }
+  if(SALA){ sessionStorage.setItem('nj-sala', SALA); if(IS_HUB) sessionStorage.setItem('nj-tv-'+SALA, '1'); try{ localStorage.setItem('nj-last', JSON.stringify({ s:SALA, t:Date.now(), tv:IS_HUB?1:0 })); }catch(e){} }
   window.__SALA = SALA; window.__SALA_HUB = IS_HUB; window.__NJ_GAME = GAME;
   window.__SALA_URL = BASE + '?sala=' + SALA;
   const HUB_ID = 'noitejogos-v1-' + SALA.toLowerCase();
@@ -87,7 +87,8 @@
   // anfitrião: rooms[name] = Map(memberId -> presence); 'hub' é a própria TV
   const rooms = new Map();
   const localRooms = new Map(); // nome -> { handlers:Set, peers:[] }
-  const MY_ID = IS_HUB ? 'hub' : 'p' + Math.random().toString(36).slice(2,10);
+  const newId = () => 'p' + Math.random().toString(36).slice(2,10);
+  let MY_ID = IS_HUB ? 'hub' : newId();
   function localRoom(name){
     if(!localRooms.has(name)){
       const st = { handlers:new Set(), peers:[], presence:{} };
@@ -158,7 +159,8 @@
         peer.on('open', () => { updatePhones(); });
         peer.on('connection', c => {
           c.on('open', () => {
-            const rec = { conn:c, rooms:new Set(), uid:null }; clients.set(c.peer, rec); updatePhones();
+            const old = clients.get(c.peer); if(old && old.conn!==c){ try{ old.conn.close(); }catch(e){} }
+            const rec = { conn:c, rooms: old ? old.rooms : new Set(), uid:null, seen:Date.now() }; clients.set(c.peer, rec); updatePhones();
             try{ c.send({ t:'hello', info: info(), db: [...store.entries()] }); }catch(e){}
           });
           c.on('data', m => hubData(c.peer, m));
@@ -174,43 +176,70 @@
       make();
     });
   }
+  function dropClient(id){ const rec = clients.get(id); if(!rec) return; clients.delete(id); try{ rec.conn.close(); }catch(e){} rec.rooms.forEach(name=>{ const r = rooms.get(name); if(r){ r.delete(id); hubBroadcastRoom(name); } }); updatePhones(); }
+  if(IS_HUB) setInterval(()=>{ const now = Date.now(); clients.forEach((c,id)=>{ if(now - (c.seen||0) > 20000) dropClient(id); else { try{ if(c.conn.open) c.conn.send({ t:'ping' }); }catch(e){} } }); if(peer && peer.disconnected && !peer.destroyed){ try{ peer.reconnect(); }catch(e){} } }, 3000);
   function hubData(id, m){
     const rec = clients.get(id); if(!rec || !m || typeof m!=='object') return;
+    rec.seen = Date.now();
+    if(m.t==='pong' || m.t==='ping') return;
     if(m.t==='join'){ rec.rooms.add(m.room); if(!rooms.has(m.room)) rooms.set(m.room, new Map()); if(!rooms.get(m.room).has(id)) rooms.get(m.room).set(id, {}); hubBroadcastRoom(m.room); }
     else if(m.t==='pres'){ rec.rooms.add(m.room); hubSetPresence(m.room, id, m.p||{}); }
     else if(m.t==='leave'){ rec.rooms.delete(m.room); const r = rooms.get(m.room); if(r){ r.delete(id); hubBroadcastRoom(m.room); } }
     else if(m.t==='dbw'){ if(typeof m.path==='string'){ applyLocal(m.path, m.v===undefined?null:m.v); broadcast({ t:'dbset', path:m.path, v:m.v===undefined?null:m.v }); } }
   }
   let dbReady = IS_HUB, dbWaiters = [], reconnT = null, lastData = 0;
-  function startClient(){
-    loadPeer(()=>{
-      peer = new Peer(MY_ID, peerOpts());
-      peer.on('open', connect);
-      peer.on('error', e => {
-        if(e && e.type==='peer-unavailable'){ setStatus({ ok:false, text:`À espera da TV da sala ${SALA}…` }); retry(); }
-        else if(e && (e.type==='network'||e.type==='server-error'||e.type==='socket-error'||e.type==='socket-closed')){ setStatus({ ok:false, text:'Sem ligação. A tentar outra vez…' }); retry(); }
-      });
-      peer.on('disconnected', () => { try{ peer.reconnect(); }catch(e){} });
+  let notOpenSince = Date.now(), peerGen = 0;
+  function startClient(){ loadPeer(()=>{ makeClientPeer(); setInterval(clientWatch, 2000); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) clientWatch(true); }); window.addEventListener('online', ()=>clientWatch(true)); window.addEventListener('pageshow', ()=>clientWatch(true)); }); }
+  function makeClientPeer(){
+    const gen = ++peerGen;
+    try{ if(conn) conn.close(); }catch(e){} try{ if(peer) peer.destroy(); }catch(e){}
+    conn = null; connOpen = false;
+    MY_ID = newId();
+    peer = new Peer(MY_ID, peerOpts());
+    peer.on('open', () => { if(gen===peerGen) connect(); });
+    peer.on('error', e => {
+      if(gen!==peerGen) return;
+      const t = e && e.type;
+      if(t==='peer-unavailable'){ setStatus({ ok:false, text:`À espera da TV da sala ${SALA}…` }); retry(); }
+      else if(t==='unavailable-id' || t==='invalid-id' || t==='browser-incompatible'){ setTimeout(()=>{ if(gen===peerGen) makeClientPeer(); }, 1000); }
+      else { setStatus({ ok:false, text:'Sem ligação. A tentar outra vez…' }); retry(); }
     });
+    peer.on('disconnected', () => { if(gen!==peerGen) return; try{ peer.reconnect(); }catch(e){} });
+    peer.on('close', () => { if(gen===peerGen) setTimeout(()=>{ if(gen===peerGen) makeClientPeer(); }, 1500); });
+  }
+  // vigia: liga-se de novo sozinho se a ligação morrer (ecrã bloqueado, rede que caiu, etc.)
+  function clientWatch(now){
+    const t = Date.now();
+    if(connOpen){
+      notOpenSince = t;
+      if(t - lastData > 9000){ connOpen = false; setStatus({ ok:false, text:'Ligação à TV perdida. A religar…' }); try{ conn.close(); }catch(e){} connect(); }
+      else { try{ conn.send({ t:'pong' }); }catch(e){} }
+      return;
+    }
+    if(!peer || peer.destroyed || t - notOpenSince > 12000){ notOpenSince = t; makeClientPeer(); return; }
+    if(now) connect();
   }
   function retry(){ clearTimeout(reconnT); reconnT = setTimeout(connect, 2500); }
+  window.__NJ._dbg = () => ({ open: connOpen, age: Date.now()-lastData, id: MY_ID, peerOpen: !!(peer&&peer.open), destroyed: !!(peer&&peer.destroyed) });
+  window.__NJ._kill = (mode) => { if(mode==='silent'){ const c = conn; conn = { send(){}, close(){}, on(){} }; connOpen = true; c && c.removeAllListeners && c.removeAllListeners(); return; } try{ peer.destroy(); }catch(e){} };
   function connect(){
-    if(!peer || peer.destroyed) return;
+    if(!peer || peer.destroyed){ makeClientPeer(); return; }
     if(peer.disconnected){ try{ peer.reconnect(); }catch(e){} retry(); return; }
+    if(!peer.open) { retry(); return; }
     try{ if(conn) conn.close(); }catch(e){}
-    conn = peer.connect(HUB_ID, { reliable:true });
-    connOpen = false;
-    const timeout = setTimeout(()=>{ if(!connOpen) retry(); }, 9000);
-    conn.on('open', () => {
-      clearTimeout(timeout); connOpen = true; lastData = Date.now();
+    const c = peer.connect(HUB_ID, { reliable:true });
+    conn = c; connOpen = false;
+    const timeout = setTimeout(()=>{ if(conn===c && !connOpen) retry(); }, 8000);
+    c.on('open', () => {
+      if(conn!==c) return;
+      clearTimeout(timeout); connOpen = true; lastData = Date.now(); notOpenSince = Date.now();
       setStatus({ ok:true, text:`Ligado à sala ${SALA}` });
-      // volta a anunciar as salas e presenças
-      localRooms.forEach((st,name)=>{ conn.send({ t:'join', room:name }); if(Object.keys(st.presence).length) conn.send({ t:'pres', room:name, p:st.presence }); });
-      const q = queue; queue = []; q.forEach(m=>{ if(m.t==='dbw') conn.send(m); });
+      localRooms.forEach((st,name)=>{ c.send({ t:'join', room:name }); if(Object.keys(st.presence).length) c.send({ t:'pres', room:name, p:st.presence }); });
+      const q = queue; queue = []; q.forEach(m=>{ if(m.t==='dbw') c.send(m); });
     });
-    conn.on('data', m => { lastData = Date.now(); clientData(m); });
-    conn.on('close', () => { connOpen = false; setStatus({ ok:false, text:'Ligação à TV perdida. A religar…' }); retry(); });
-    conn.on('error', () => { connOpen = false; retry(); });
+    c.on('data', m => { if(conn!==c) return; lastData = Date.now(); if(m && m.t==='ping'){ try{ c.send({ t:'pong' }); }catch(e){} return; } clientData(m); });
+    c.on('close', () => { if(conn!==c) return; connOpen = false; setStatus({ ok:false, text:'Ligação à TV perdida. A religar…' }); retry(); });
+    c.on('error', () => { if(conn!==c) return; connOpen = false; retry(); });
   }
   function clientData(m){
     if(!m || typeof m!=='object') return;
@@ -258,11 +287,23 @@
       #njbar.min span,#njbar.min a{display:none}`;
     const st = document.createElement('style'); st.textContent = css;
     const bar = document.createElement('div'); bar.id = 'njbar';
-    bar.innerHTML = `<i class="d"></i><span>A ligar…</span>${IS_HUB ? `<a href="${BASE}?sala=${SALA}&tv=1&escolher=1">⇄ Trocar de jogo</a>` : `<a href="${BASE}">🏠</a>`}`;
+    bar.innerHTML = `<i class="d"></i><span>A ligar…</span>${IS_HUB ? `<a href="#" data-njqr>📱 Entrar</a><a href="${BASE}?sala=${SALA}&tv=1&escolher=1">⇄ Trocar de jogo</a>` : `<b style="color:#f3d68c;letter-spacing:.1em">${SALA}</b><a href="#" data-njre>↻</a>`}`;
+    bar.addEventListener('click', e => {
+      if(e.target.closest('[data-njre]')){ e.preventDefault(); location.reload(); }
+      if(e.target.closest('[data-njqr]')){ e.preventDefault(); showQR(); }
+    });
     const mount = () => { document.head.appendChild(st); document.body.appendChild(bar); bar.addEventListener('dblclick', ()=>bar.classList.toggle('min')); };
     if(document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);
     const paint = () => { let el = document.getElementById('njbar'); if(!el && document.body){ document.body.appendChild(bar); el = bar; } if(!el) return; const sp = el.querySelector('span'); if(sp && sp.textContent!==status.text) sp.textContent = status.text; el.classList.toggle('ok', !!status.ok); };
     window.__NJ.onStatus(paint); setInterval(paint, 1500);
-    if(!IS_HUB) setTimeout(()=>{ const el=document.getElementById('njbar'); if(el) el.classList.add('min'); }, 15000);
+    function showQR(){
+      let ov = document.getElementById('njqr'); if(ov){ ov.remove(); return; }
+      ov = document.createElement('div'); ov.id='njqr';
+      ov.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:#f3ead6;font:600 18px system-ui,sans-serif;text-align:center';
+      ov.innerHTML = `<div style="background:#fff;padding:12px;border-radius:16px" id="njqrc"></div><div style="font:400 64px Georgia,serif;letter-spacing:.2em;color:#f3d68c">${SALA}</div><div>Lê o QR ou abre <b>${BASE.replace(/^https?:\/\//,'')}</b> e escreve o código da sala.<br>Quem saiu a meio volta a entrar e escolhe o seu nome.</div><div style="opacity:.7;font-size:14px">(toca para fechar)</div>`;
+      ov.onclick = () => ov.remove(); document.body.appendChild(ov);
+      const draw = () => { if(window.QRCode){ try{ new QRCode(document.getElementById('njqrc'), { text: window.__SALA_URL, width: 240, height: 240 }); }catch(e){} } };
+      if(window.QRCode) draw(); else { const sc = document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; sc.onload = draw; document.head.appendChild(sc); }
+    }
   }
 })();
