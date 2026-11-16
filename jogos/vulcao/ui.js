@@ -8,14 +8,15 @@
   const hatE = k => D.HATS[k] ? D.HATS[k][0] : '🙂';
   const tok = (p, cls) => `<span class="tok ${cls || ''}" style="background:${D.PCOLORS[p.col]}">${hatE(p.hat)}</span>`;
   const KIND = { all: 'Todos contra todos', '1vN': '1 contra o resto', team: 'Equipas', duel: 'Duelo 1 contra 1', gate: 'Desafio do Guardião', tel: 'Prova de telemóvel' };
-  const MGN = { stop: ['⏱️', 'Relógio Cego'], reflex: ['⚡', 'Reflexos'], taps: ['🔨', 'Martelada'] };
-  const MGD = { stop: t => `Carrega em Começar e pára o relógio o mais perto possível dos ${t} segundos. O relógio esconde-se ao fim de 2 segundos!`, reflex: () => 'Quando o ecrã ficar VERDE, toca o mais depressa que conseguires. Quem tocar antes do tempo fica em último.', taps: () => 'Tens 6 segundos para dar o maior número de toques no botão.' };
+  const MGN = { stop: ['⏱️', 'Relógio Cego'], reflex: ['⚡', 'Reflexos'], taps: ['🔨', 'Martelada'], min01: ['🔢', '0 ou 1'], ppt: ['✊', 'Pedra, Papel, Tesoura'], parimpar: ['🎲', 'Par ou Ímpar'], unico: ['🎯', 'Número Único'] };
+  const ELO = { min01: [['0', '0'], ['1', '1']], ppt: [['✊', 'Pedra'], ['✋', 'Papel'], ['✌️', 'Tesoura']], parimpar: [['2️⃣', 'Par'], ['1️⃣', 'Ímpar']] };
+  const MGD = { stop: t => `Carrega em Começar e pára o relógio o mais perto possível dos ${t} segundos. O relógio esconde-se ao fim de 2 segundos!`, reflex: () => 'Quando o ecrã ficar VERDE, toca o mais depressa que conseguires. Quem tocar antes do tempo fica em último.', taps: () => 'Tens 6 segundos para dar o maior número de toques no botão.', min01: () => 'Todos escolhem 0 ou 1 em segredo. Quem ficar na minoria continua; a maioria sai. Os 2 últimos decidem a pedra, papel, tesoura.', ppt: () => 'Todos escolhem ao mesmo tempo. Se só houver dois gestos em jogo, quem perde sai. Ganha o último.', parimpar: () => 'A soma dos dois dados vai ser par ou ímpar? Quem falhar sai. Ganha o último.', unico: () => 'Escolhe um número de 1 a 9. Ganha o número mais alto que mais ninguém escolheu.' };
   const WHY = { move: 'É a tua vez! Lança os dados.', volc: 'Estás dentro do vulcão. Lança para subir.', again: 'Trampolim! Lança outra vez.', duel: 'Duelo de dados: ganha o número mais alto.' };
   const nameOf = (V, i) => V.players[i] ? V.players[i].name : '?';
   const diceIcons = p => `<i class="di n"></i>${p.dn > 1 ? '<i class="di g"></i>' : ''}${p.db ? '<i class="di b"></i>' : ''}${p.extra ? '<i class="di b"></i>' : ''}`;
   const remaining = (V, x) => x.s * 1000 - ((V.now - x.t0) + (Date.now() - V.at));
   const where = p => p.zone === 'v' ? `🌋 vulcão ${p.vpos + 1}/${D.M}` : p.pos === D.GOAL ? '⛩️ Cume' : `casa ${p.pos}/${D.GOAL}`;
-  const acted = (V, i) => { const x = V.x; if (!x) return false; if (V.step === 'vote') return x.votes && x.votes[i] !== undefined; if (V.step === 'mg' || V.step === 'mgwait') return x.res && x.res[i] !== undefined; return false; };
+  const acted = (V, i) => { const x = V.x; if (!x) return false; if (V.step === 'vote') return x.votes && x.votes[i] !== undefined; if (V.step === 'mg' || V.step === 'mgwait') return x.res && x.res[i] !== undefined; if (V.step === 'el') return x.picks && x.picks[i] !== undefined; return false; };
   const mustAct = (V, i) => !!(V.ph === 'play' && V.x && V.x.who && V.x.who.includes(i) && !acted(V, i));
   const voteLabel = (V, x, v) => {
     if (x.k === 'all' || x.k === 'duel') return `${hatE(V.players[v].hat)} ${esc(nameOf(V, v))}`;
@@ -136,6 +137,9 @@
         else if (done || g.phase === 2) out += `<p style="font-size:19px">⚡ ${g.val || x.res[me]} ms. À espera dos outros…</p>`;
         else if (V.step === 'mgwait') out += `<p>${MGD.reflex()}</p><button class="tapbtn red" data-tap="early">ESPERA…</button>`;
         else out += `<button class="tapbtn green" data-tap="go">TOCA!</button>`;
+      } else if (x.k === 'unico') {
+        if (done) out += `<p style="font-size:19px">Escolheste o <b>${x.res[me]}</b>. À espera dos outros…</p>`;
+        else out += `<p>${MGD.unico()}</p><div class="numgrid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="btn sun" data-a="mg" data-v="${n}">${n}</button>`).join('')}</div>`;
       } else if (x.k === 'stop') {
         if (g.phase === 0 && !done) out += `<p>${MGD.stop(x.target)}</p><button class="tapbtn" data-a="mgstart">▶ Começar</button>`;
         else if (g.phase === 1) out += `<p class="center" style="font-size:20px">Pára aos <b>${x.target} segundos</b></p><div class="ptimer" id="mgclock">0.0 s</div><button class="tapbtn sun" data-tap="stop" style="height:32vh;margin-top:10px">✋ PARAR</button>`;
@@ -154,8 +158,8 @@
         const r = x.rank || []; out = `<div class="card"><h2>🏆 ${esc(nameOf(V, V.winner))} conquistou a ilha!</h2>${r.map((i, k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b><small>${where(V.players[i])}</small></div></div>`).join('')}<p class="muted">Nova partida: na TV.</p></div>`;
       } else switch (V.step) {
         case 'roll': {
-          if (!mine) { out = waitBox('🎲', `${wn} vai lançar os dados`, x.need ? `Precisa de ${x.need} ou mais.` : ''); break; }
-          const txt = x.why === 'gate' ? `Guardião: precisas de <b>${x.need} ou mais</b>.` : x.why === 'final' ? `Gongo do Cume: precisas de <b>${x.need} ou mais</b>!` : WHY[x.why] || WHY.move;
+          if (!mine) { out = waitBox('🎲', `${wn} vai lançar os dados`, x.need === 6 ? 'Precisa de um 6.' : x.need ? `Precisa de ${x.need} ou mais.` : ''); break; }
+          const txt = x.why === 'gate' ? `Guardião: o teu melhor dado tem de ser <b>${x.need} ou mais</b>.` : x.why === 'final' ? `Gongo do Cume: só um <b>6</b> o faz soar!` : WHY[x.why] || WHY.move;
           const left = Math.max(0, Math.ceil((x.ms - ((V.now - x.t0) + (Date.now() - V.at))) / 1000));
           out = `<div class="card hot center"><h2>${x.why === 'final' ? '⛩️ O gongo!' : x.why === 'gate' ? '🗿 Guardião' : '🎲 A tua vez'}</h2><p>${txt}</p><div class="dicerow">${'<div class="dbig n">?</div>'.repeat(Math.min(1, x.n))}${x.n > 1 ? '<div class="dbig g">?</div>' : ''}${'<div class="dbig b">?</div>'.repeat(x.b)}</div><button class="btn huge sun" data-a="roll">🎲 Lançar</button><p class="muted" style="font-size:13px">${left <= 30 ? `A TV lança por ti daqui a ${left} s.` : ''}</p></div>`; break;
         }
@@ -178,6 +182,18 @@
           out = `<div class="card hot"><span class="kind">Votação</span><h2>🗳️ ${q}</h2><div class="opts">${x.opts.map(v => `<button class="btn ${x.k === 'gate' ? (v ? 'good' : 'bad') : ''}" data-a="vote" data-v="${v}">${voteLabel(V, x, v)}</button>`).join('')}</div><p class="muted" style="font-size:13px">Ganha a maioria. Empate: ${x.k === 'gate' ? 'passa' : 'decide o dado'}.</p></div>`; break;
         }
         case 'mgwait': case 'mg': out = mgCard(V, me, x); break;
+        case 'el': {
+          const n = MGN[x.k], inn = x.act.includes(me), mp = x.picks[me];
+          out = `<div class="card ${mine ? 'hot' : ''}"><span class="kind">Prova de telemóvel · ronda ${x.rd}</span><h2>${n[0]} ${n[1]}</h2>`;
+          if (!inn) out += `<p style="font-size:18px">👀 Estás fora desta prova. Ainda jogam: ${x.act.map(i => esc(nameOf(V, i))).join(', ')}.</p>`;
+          else if (mp !== undefined) out += `<p style="font-size:19px">Escolheste <b>${ELO[x.k][mp][0]} ${ELO[x.k][mp][1]}</b>. À espera dos outros…</p>`;
+          else out += `<p>${MGD[x.k]()}</p><div class="elrow">${ELO[x.k].map((o, v) => `<button class="tapbtn ${['', 'sun', 'green'][v]}" data-a="el" data-v="${v}"><span>${o[0]}</span><small>${o[1]}</small></button>`).join('')}</div>`;
+          out += '</div>'; break;
+        }
+        case 'elres': {
+          const n = MGN[x.k], inn = x.act.includes(me), ok = x.surv.includes(me), all = x.surv.length === x.act.length;
+          out = `<div class="card center"><span class="kind">${n[1]} · ronda ${x.rd}</span><h2>${!inn ? '👀' : all ? '🤝 Ninguém sai' : ok ? '✅ Continuas!' : '❌ Estás fora'}</h2>${x.sum ? `<p>Saiu <b>${x.sum}</b> (${x.sum % 2 ? 'ímpar' : 'par'}).</p>` : ''}${x.c0 !== undefined ? `<p><b>${x.c0}</b> escolheram 0 · <b>${x.c1}</b> escolheram 1</p>` : ''}${x.act.map(i => `<div class="prow">${tok(V.players[i], 's')}<div class="gr" style="text-align:left"><b>${esc(nameOf(V, i))}</b></div><span style="font-size:20px">${ELO[x.k][x.picks[i]][0]} ${x.surv.includes(i) ? '✅' : '❌'}</span></div>`).join('')}</div>`; break;
+        }
         case 'mgres': out = `<div class="card"><span class="kind">Resultado</span><h2>${MGN[x.k][0]} ${MGN[x.k][1]}</h2>${x.rank.map(([i, v], k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b></div><span>${mgVal(x, v)} ${k === 0 ? '<i class="di g"></i>' : k === 1 && x.rank.length >= 3 ? '<i class="di b"></i>' : ''}</span></div>`).join('')}</div>`; break;
         case 'pvres': out = `<div class="card center"><span class="kind">Prémios da prova</span><h2>🎲 Dados desta ronda</h2>${V.players.map(q => `<div class="prow">${tok(q, 's')}<div class="gr" style="text-align:left"><b>${esc(q.name)}</b></div><span>${diceIcons(q)}</span></div>`).join('')}</div>`; break;
         case 'storm': out = waitBox('🌪️', 'Tufão!', 'A roleta escolhe quem ele leva…'); break;
@@ -210,7 +226,7 @@
     return { render, P };
   }
   const prog = p => p.zone === 'i' ? p.pos : ENG.checkpoint(p) - .5 + p.vpos / 100;
-  const mgVal = (x, v) => x.k === 'stop' ? (v >= 99999 ? '—' : (v / 1000).toFixed(2) + ' s') : x.k === 'reflex' ? (v >= 9999 ? '🚫' : v + ' ms') : v + ' toques';
+  const mgVal = (x, v) => v === null || v === undefined ? '' : x.k === 'unico' ? 'n.º ' + v + (x.rank.filter(r => r[1] === v).length > 1 ? ' (repetido)' : '') : x.k === 'stop' ? (v >= 99999 ? '—' : (v / 1000).toFixed(2) + ' s') : x.k === 'reflex' ? (v >= 9999 ? '🚫' : v + ' ms') : v + ' toques';
 
   // ===================== REDE =====================
   const Net = {
@@ -264,7 +280,7 @@
     async hop(pi, sp) { Sound.hop(); if (T3()) await T3().hop(pi, sp); else await sleep(260); },
     async rollDice(pi, out, sum, why, need) {
       if (T3()) await T3().rollDice(out); else await sleep(700);
-      const el = $('#dicesum'); el.innerHTML = `${sum}<small>${need ? `${esc(S.players[pi].name)} precisava de ${need}+ ${sum >= need ? '✅' : '❌'}` : out.length > 1 ? out.map(o => o.v).join(' + ') : esc(S.players[pi].name)}</small>`; el.classList.add('show');
+      const el = $('#dicesum'); const pn = S.players[pi] ? esc(S.players[pi].name) : ''; el.innerHTML = `${sum}<small>${why === 'pi' ? (sum % 2 ? 'ÍMPAR' : 'PAR') : need ? `${pn} precisava de ${need === 6 ? 'um 6' : need + '+'} ${sum >= need ? '✅' : '❌'}` : out.length > 1 ? out.map(o => o.v).join(' + ') : pn}</small>`; el.classList.add('show');
       await sleep(need ? 1500 : 1000); el.classList.remove('show'); if (T3()) await T3().clearDice();
     },
     async cut(name, o) {
@@ -272,7 +288,7 @@
       switch (name) {
         case 'intro': $('#title').classList.add('show'); await c3('intro', o, 2500); $('#title').classList.remove('show'); return;
         case 'round': { const p = banner(`Ronda ${o.n}`, o.erupt > 0 ? `🔥 Lava nas casas especiais por mais ${o.erupt} ronda${o.erupt > 1 ? 's' : ''}` : '', o.erupt > 0 ? 'lava' : 'info', 1500); await c3('round', o, 300); await p; return; }
-        case 'prova': if (T3()) T3().orbit(96, 40); cutov(`<div class="pbox"><div class="k">Prova da ronda</div><h1>${esc(o.t)}</h1><div class="d">${o.kind === 'tel' ? '📱 Peguem nos telemóveis!' : '🤹 Prova da vida real: larguem os telemóveis!'}</div></div>`); await sleep(2400); cutov(null, false); return;
+        case 'prova': if (T3()) T3().orbit(96, 40); cutov(`<div class="pbox"><div class="k">${o.duel ? 'Duelo no telemóvel' : 'Prova da ronda'}</div><h1>${o.k ? MGN[o.k][0] + ' ' : ''}${esc(o.t)}</h1><div class="d">${o.kind === 'tel' ? (o.k ? esc(MGD[o.k](4)) .replace('dos 4 segundos', 'do tempo pedido') : '') + '<br>📱 Peguem nos telemóveis!' : '🤹 Prova da vida real: larguem os telemóveis!'}</div></div>`); await sleep(o.kind === 'tel' ? 4200 : 2400); cutov(null, false); return;
         case 'prizes': {
           cutov(`<div class="pbox"><div class="k">Prémios da prova</div><h1>🎲 Dados desta ronda</h1><div class="ranklist">${S.players.map((p, i) => `<div class="r" style="${o.w.includes(i) ? '' : 'background:#eef6f7'}">${tok(p, 's')}<b>${p.bot ? '🤖 ' : ''}${esc(p.name)}</b><span>${p.dn > 1 ? '🥇 dado de ouro' : p.db ? '🥉 dado de bronze' : 'dado normal'} ${diceIcons(p)}</span></div>`).join('')}</div></div>`);
           await sleep(3400); cutov(null, false); return;
@@ -280,10 +296,26 @@
         case 'rank': cutov(`<div class="pbox"><div class="k">${MGN[o.k][0]} ${MGN[o.k][1]}${o.k === 'stop' ? ` · alvo ${o.target} s` : ''}</div><h1>Classificação</h1><div class="ranklist">${o.rank.map(([i, v], k) => `<div class="r">${tok(S.players[i], 's')}<b>${k + 1}.º ${S.players[i].bot ? '🤖 ' : ''}${esc(nm(i))}</b><span>${mgVal(o, v)} ${k === 0 ? '🥇' : k === 1 && o.rank.length >= 3 ? '🥉' : ''}</span></div>`).join('')}</div></div>`); await sleep(4600); cutov(null, false); return;
         case 'card': { const c = D.LUCK[o.c], dare = c.a === 'dare'; if (T3()) T3().focus(o.who[0]); cutov(`<div class="cardbig"><div class="e">${dare ? '🎭' : '🃏'}</div><h2>${dare ? 'Prenda!' : esc(c.t)}</h2><p>${esc(dare ? D.DARE[o.di] : c.d)}</p></div>`); await sleep(dare ? 1800 : 3000); cutov(null, false); return; }
         case 'wheel': {
-          const draw = hi => cutov(`<div class="pbox"><div class="k">${esc(o.sub)}</div><h1>${o.t}</h1><div class="who">${o.list.map(i => `<span class="pch ${i === hi ? 'pick' : ''}" style="--c:${D.PCOLORS[S.players[i].col]}">${tok(S.players[i], 's')}${esc(nm(i))}</span>`).join('')}</div></div>`);
-          const n = o.list.length, end = o.list.indexOf(o.v), steps = n * 3 + end;
-          for (let k = 0; k <= steps; k++) { draw(o.list[k % n]); Sound.tick(); await sleep(70 + Math.pow(k / steps, 3) * 380); }
-          await sleep(900); cutov(null, false); return;
+          const n = o.list.length, seg = 360 / n, R = 100, idx = o.list.indexOf(o.v), rad = d => (d - 90) * Math.PI / 180;
+          const segs = o.list.map((pi, k) => {
+            const p = S.players[pi], a0 = rad(k * seg), a1 = rad((k + 1) * seg), mid = (k + .5) * seg - 90;
+            const shape = n === 1 ? `<circle r="${R}" fill="${D.PCOLORS[p.col]}"/>` : `<path d="M0 0 L${(Math.cos(a0) * R).toFixed(2)} ${(Math.sin(a0) * R).toFixed(2)} A${R} ${R} 0 ${seg > 180 ? 1 : 0} 1 ${(Math.cos(a1) * R).toFixed(2)} ${(Math.sin(a1) * R).toFixed(2)} Z" fill="${D.PCOLORS[p.col]}" stroke="#fff" stroke-width="1.6"/>`;
+            return `${shape}<g transform="rotate(${mid.toFixed(2)})"><circle cx="78" r="${n > 6 ? 9 : 12}" fill="rgba(255,255,255,.92)"/><text x="78" y="${n > 6 ? 4 : 5.5}" font-size="${n > 6 ? 11 : 15}" text-anchor="middle">${hatE(p.hat)}</text><text x="40" y="3.5" font-size="${n > 6 ? 8 : 10.5}" font-weight="900" text-anchor="middle" fill="#fff" stroke="rgba(0,0,0,.55)" stroke-width="2.2" paint-order="stroke" font-family="Nunito,sans-serif">${esc(p.name)}</text></g>`;
+          }).join('');
+          cutov(`<div class="wheelbox"><div class="k">${esc(o.sub)}</div><h1>${o.t}</h1><div class="wheelwrap"><div class="wptr">▼</div><svg id="wheelsvg" viewBox="-106 -106 212 212"><circle r="105" fill="#fff"/><g>${segs}</g><circle r="13" fill="#ffc93c" stroke="#fff" stroke-width="3"/></svg></div><div class="wres" id="wres">&nbsp;</div></div>`);
+          const sp = S.opts.speed || 1, dur = 4600 * sp, w = $('#wheelsvg');
+          const rot = 360 * 6 - (idx + .5) * seg + (Math.random() - .5) * seg * .5;
+          await new Promise(r => setTimeout(r, 350));
+          w.style.transition = `transform ${dur}ms cubic-bezier(.12,.62,.1,1)`; w.style.transform = `rotate(${rot}deg)`;
+          let tk = 0; const tick = () => { if (tk > dur * .92) return; Sound.tick(); const gap = 55 + Math.pow(tk / dur, 2.4) * 420; tk += gap; setTimeout(tick, gap); }; tick();
+          await new Promise(r => setTimeout(r, dur + 250));
+          Sound.bell(); const wr = $('#wres'); if (wr) { wr.innerHTML = `${tok(S.players[o.v], 's')} ${esc(nm(o.v))}`; wr.classList.add('show'); }
+          await sleep(1700); cutov(null, false); return;
+        }
+        case 'elres': {
+          const x = o, n = MGN[x.k], all = x.surv.length === x.act.length;
+          cutov(`<div class="pbox"><div class="k">${n[0]} ${n[1]} · ronda ${x.rd}</div><h1>${x.sum ? `Saiu ${x.sum}: ${x.sum % 2 ? 'ímpar' : 'par'}` : x.c0 !== undefined ? `${x.c0} × “0” · ${x.c1} × “1”` : all ? 'Empate!' : 'Resultado'}</h1><div class="who">${x.act.map(i => `<span class="pch ${x.surv.includes(i) && !all ? 'done' : ''}" style="--c:${D.PCOLORS[S.players[i].col]};${x.surv.includes(i) ? '' : 'opacity:.45'}">${tok(S.players[i], 's')}${esc(nm(i))} <b style="font-size:1.3em">${ELO[x.k][x.picks[i]][0]}</b></span>`).join('')}</div><div class="foot">${x.draw ? 'Demasiados empates: a sorte cortou o grupo a meio.' : all ? 'Ninguém sai. Outra vez!' : x.surv.length === 1 ? `🏆 ${esc(nm(x.surv[0]))} ganha!` : `Continuam: ${x.surv.map(i => esc(nm(i))).join(', ')}`}</div></div>`);
+          await sleep(3200); cutov(null, false); return;
         }
         case 'duel': if (T3()) T3().focus(o.b); await banner('⚔️ Duelo!', `${nm(o.a)} contra ${nm(o.b)}`, 'warn', 1900); return;
         case 'duelEnd': if (T3()) T3().focus(o.w); await banner(`${nm(o.w)} venceu!`, `Avança 3 · ${nm(o.l)} recua 3`, 'good', 1900); return;
@@ -297,10 +329,10 @@
         case 'geyser': { const tk = showBanner('♨️ Géiser!', `${nm(o.pi)} volta à ilha`, 'good'); await c3(name, o, 1500); hideBanner(tk); return; }
         case 'exit': { const tk = showBanner('🚪 Saída da gruta', `${nm(o.pi)} escapou do vulcão`, 'good'); await c3(name, o, 1500); hideBanner(tk); return; }
         case 'swap': { const tk = showBanner('🦜 Troca!', `${nm(o.a)} ⇄ ${nm(o.b)}`, 'warn'); await c3(name, o, 1500); hideBanner(tk); return; }
-        case 'gate': { const p = banner('🗿 ' + D.GATE_NAMES[o.gi], `${nm(o.pi)} tem de vencer o desafio para passar`, 'warn', 1900); await c3(name, o); await p; return; }
+        case 'gate': { const p = banner('🗿 ' + D.GATE_NAMES[o.gi], `${nm(o.pi)} precisa de ${o.need} ou mais para passar`, 'warn', 1900); await c3(name, o); await p; return; }
         case 'gateOpen': { const p = banner('Passou!', 'O Guardião abre caminho', 'good', 1600); await c3(name, o); await p; return; }
-        case 'gateFail': { const p = banner('Falhou!', o.last ? 'O Guardião da Cratera atira-o ao vulcão' : 'Perde a vez e tenta na próxima ronda', 'bad', 1800); await c3(name, o); await p; return; }
-        case 'summit': { const p = banner('⛩️ O Cume!', `${nm(o.pi)} precisa de ${o.need} ou mais para tocar o gongo`, 'warn', 2000); await c3(name, o); await p; return; }
+        case 'gateFail': { const p = banner('Não passou!', 'Perde a vez e tenta na próxima ronda', 'bad', 1800); await c3(name, o); await p; return; }
+        case 'summit': { const p = banner('⛩️ O Cume!', `${nm(o.pi)} precisa de um 6 para tocar o gongo`, 'warn', 2000); await c3(name, o); await p; return; }
         case 'win': {
           $('#panel').classList.remove('show'); await c3('win', o, 600); await banner(`🏆 ${nm(o.rank[0])} ganhou!`, 'Conquistou a Ilha do Vulcão', 'good', 4200);
           if (S.ph !== 'over') return;
@@ -385,7 +417,7 @@
         <h3>Regras da casa</h3>
         <label class="opt">Provas <select id="omode"><option value="mix">Vida real + telemóvel</option><option value="real">Só da vida real</option><option value="tel">Só de telemóvel</option></select></label>
         <label class="opt"><input type="checkbox" id="ocards" checked> Temos um baralho de cartas à mão</label>
-        <label class="opt">Duração <select id="olen"><option value="n">Normal (cerca de 75 min)</option><option value="r">Rápida: todos levam +1 dado de bronze (45 min)</option></select></label>
+        <label class="opt">Duração <select id="olen"><option value="n">Normal (cerca de 80 min)</option><option value="r">Rápida: todos levam +1 dado de bronze (45 min)</option></select></label>
         <label class="opt">Ritmo das animações <select id="ospeed"><option value="1.3">Calmo</option><option value="1" selected>Normal</option><option value="0.7">Rápido</option></select></label>
         <label class="opt">Gráficos <select id="oq"><option value="alta">Alta (sombras, reflexos, brilho)</option><option value="media">Média</option><option value="leve">Leve (ecrãs lentos)</option></select></label>
         <button class="btn huge good" id="gostart" style="margin-top:12px">🌋 Começar a subida</button><button class="btn sm ghost" id="lbrules" style="margin-top:8px;width:100%;color:#fff;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)">📖 Ler as regras</button><div id="lbhint"></div></div>`;
@@ -461,9 +493,10 @@
         case 'vote': html = `<div class="pbox"><div class="k">Votação</div><h1>🗳️ ${x.k === 'gate' ? `${esc(nameOf(V, x.solo))} passou?` : 'Quem ganhou?'}</h1><div class="d">Votem no telemóvel</div>${chips(x.who)}<div class="foot">Ganha a maioria · empate: ${x.k === 'gate' ? 'passa' : 'decide o dado'}</div></div>`; break;
         case 'mgwait': html = `<div class="pbox"><div class="k">⚡ Reflexos</div><div class="mgbig red">ESPERA…</div><div class="foot">Toquem no telemóvel quando ficar verde</div></div>`; break;
         case 'mg': html = x.k === 'reflex' ? `<div class="pbox"><div class="k">⚡ Reflexos</div><div class="mgbig green">TOCA!</div>${chips(x.who)}</div>` : `<div class="pbox"><div class="k">Prova de telemóvel</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k](x.target))}</div>${chips(x.who)}</div>`; break;
+        case 'el': html = `<div class="pbox"><div class="k">Prova de telemóvel · ronda ${x.rd}</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k]())}</div><div class="who">${x.act.map(i => `<span class="pch ${x.picks[i] !== undefined || V.players[i].bot ? 'done' : ''}" style="--c:${D.PCOLORS[V.players[i].col]}">${tok(V.players[i], 's')}${esc(nameOf(V, i))}${x.picks[i] !== undefined || V.players[i].bot ? ' ✅' : ''}</span>`).join('')}</div><div class="foot">Escolham no telemóvel, em segredo</div></div>`; break;
         case 'dare': html = `<div class="cardbig"><div class="e">🎭</div><h2>Prenda de ${esc(nameOf(V, x.who[0]))}</h2><p>${esc(D.DARE[x.di])}</p><p style="margin-top:10px;font-size:16px;opacity:.75">Faz e avança 3 · recusa e recua 3</p></div>`; break;
         case 'pick': prompt = `${{ duel: '⚔️', swap: '🦜', push: '👉' }[x.k]} ${esc(nameOf(V, x.who[0]))} está a escolher…`; break;
-        case 'roll': { const p = V.players[x.who[0]]; prompt = `🎲 ${esc(p.name)}, lança os dados ${p.bot ? '' : p.local ? 'no comando do ecrã' : 'no telemóvel'}${x.need ? ` · precisa de ${x.need}+` : ''}`; break; }
+        case 'roll': { const p = V.players[x.who[0]]; prompt = `🎲 ${esc(p.name)}, lança os dados ${p.bot ? '' : p.local ? 'no comando do ecrã' : 'no telemóvel'}${x.need === 6 ? ' · precisa de um 6' : x.need ? ` · precisa de ${x.need}+` : ''}`; break; }
       }
     }
     if (P.dataset.h !== html) { P.dataset.h = html; P.innerHTML = html; P.classList.toggle('show', !!html); }
@@ -546,7 +579,7 @@
     if (claim !== null) { claim = null; presence(); }
     if (!pad) { $('#padroot').onclick = null; $('#padroot').innerHTML = '<div id="padwrap" style="position:absolute;inset:0"></div>'; pad = makePad($('#padwrap'), { getView: () => padV, me: () => me, send: padSend, local: false }); }
     const was = pad._mine; pad._mine = mustAct(V, me);
-    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'roll', 'pick', 'dare'].includes(V.step)) { pad.P.tab = 'play'; } }
+    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'el', 'roll', 'pick', 'dare'].includes(V.step)) { pad.P.tab = 'play'; } }
     pad.render();
   }
   let lastRecl = '';

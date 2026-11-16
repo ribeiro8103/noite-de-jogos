@@ -1697,6 +1697,12 @@ const TV = (() => {
     const qEnd=[dieQuat(a,yaw[0]), dieQuat(b,yaw[1])];
     const axes=[V(Math.random(),Math.random(),Math.random()).normalize(), V(Math.random(),Math.random(),Math.random()).normalize()];
     camGoal.pos.set(0,7.5,9); camGoal.look.set(0,0,2.4); focusUntil=performance.now()+2600*SPEED();
+    if(window.__NJ && window.__NJ.dados){
+      // dados 3D grandes por cima do ecrã (iguais aos da Ilha do Vulcão); os do tabuleiro ficam com o resultado
+      dice.forEach((d,j)=>{ d.quaternion.copy(qEnd[j]); d.position.copy(ends[j]); });
+      const ok = await window.__NJ.dados(a===b ? [{v:a,t:'g'},{v:b,t:'g'}] : [a,b], {label: a===b ? `${a} + ${b} = ${a+b} · dados iguais!` : `${a} + ${b} = ${a+b}`, speed:SPEED(), hold:1000});
+      if(ok) return;
+    }
     await tween(1400, k=>{
       dice.forEach((d,j)=>{ const s=start.clone().add(V(j*.4,1.5,0)); const e=ends[j];
         d.position.lerpVectors(s,e,easeOut(k)); const bounce=Math.abs(Math.cos(k*Math.PI*2.5))*(1-k)*1.6; d.position.y=.21+bounce + (1-easeOut(k))*1.2;

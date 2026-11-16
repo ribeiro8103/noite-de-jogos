@@ -329,6 +329,11 @@ Responde APENAS com JSON: {"players":[{"role":"","title":"","nick":"","emoji":""
   }
   async function dice(ev) {
     const S = H.S, el = $('#dice'), p = S.players[ev.actor]; const pace = CG.PACE[S.pace] || 1;
+    if (window.__NJ && window.__NJ.dados && typeof ev.roll === 'number' && ev.roll >= 1 && ev.roll <= 6) {
+      SND.play('dice'); setTimeout(() => SND.play('diceLand'), 1300 * pace);
+      const ok = await window.__NJ.dados([ev.roll], { label: `<span style="font-size:.5em;color:${p.color}">${esc(p.character.emoji)} ${esc(p.name)}</span>`, speed: pace, hold: 1200 });
+      if (ok) return;
+    }
     $('.who', el).innerHTML = `<span style="color:${p.color}">${esc(p.character.emoji)} ${esc(p.name)}</span>`; el.classList.add('on', 'roll'); SND.play('dice');
     const d = $('.d', el); const t0 = performance.now(); while (performance.now() - t0 < 1500 * pace) { d.textContent = 1 + Math.floor(Math.random() * 6); await sleep(90); }
     el.classList.remove('roll'); d.textContent = ev.roll; SND.play('diceLand'); await sleep(1400 * pace); el.classList.remove('on'); await sleep(300);

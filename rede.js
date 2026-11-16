@@ -355,6 +355,11 @@
   } };
   if(SALA && !(GAME==='portal' && IS_HUB)){ if(IS_HUB) startHub(); else startClient(); }
 
+  // ====================== dados 3D partilhados ======================
+  function loadDados(cb){ if(window.Dados3D) return cb(true); const sc = document.createElement('script'); sc.src = BASE + 'dados3d.bundle.js'; sc.onload = () => cb(!!window.Dados3D); sc.onerror = () => cb(false); document.head.appendChild(sc); }
+  window.__NJ.dados = (vals, opts) => new Promise(res => loadDados(ok => { if(!ok) return res(false); window.Dados3D.show(vals, opts).then(res, () => res(false)); }));
+  if(IS_HUB && GAME!=='portal') setTimeout(() => loadDados(() => {}), 2500);
+
   // ====================== barra da sala ======================
   if(GAME!=='portal' && SALA){
     const css = `#njbar{position:fixed;left:8px;bottom:8px;z-index:9999;font:600 12px/1.2 system-ui,sans-serif;color:#f3ead6;background:rgba(8,14,11,.82);border:1px solid rgba(216,178,90,.45);border-radius:999px;padding:6px 10px;display:flex;gap:8px;align-items:center;backdrop-filter:blur(6px);max-width:calc(100vw - 16px)}

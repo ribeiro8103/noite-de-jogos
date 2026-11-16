@@ -1376,7 +1376,9 @@ const UI = (() => {
       if (S.step !== 'roll' || S.turn !== pi || S.rl) { setErr(src, 'Agora não podes lançar os dados.'); push(); return; }
       const d = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
       S.rl = 1; push(); Sound.dice();
-      if (V3) await V3.rollDice(d[0], d[1]); else await sleep(1400 / pace);
+      { const pr = V3 ? V3.rollDice(d[0], d[1]) : null; let ok = false;
+        if (window.__NJ && window.__NJ.dados) ok = await window.__NJ.dados(d, { label: String(d[0] + d[1]), speed: 1 / pace, hold: 900 });
+        if (!ok) { if (pr) await pr; else await sleep(1400 / pace); } }
       cmd = { a: 'roll', dice: d };
     }
     const before = S.eid;
