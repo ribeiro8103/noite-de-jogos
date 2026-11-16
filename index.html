@@ -87,7 +87,7 @@ function home(){
     <button class="btn ghost" id="ph">📱 Sou jogador<small>entrar com o código da sala</small></button></div>
     <div class="games" style="margin-top:8px">${GAMES.map(g=>`<div class="game" style="--c:${g.c};cursor:default"><div class="ic">${g.ic}</div><h2>${esc(g.n)}</h2><p>${esc(g.d)}</p><div class="meta">${g.meta.map(m=>`<span>${esc(m)}</span>`).join('')}</div></div>`).join('')}</div>
     <p class="center muted small">Dica: a TV e os telemóveis funcionam melhor ligados à mesma rede Wi-Fi.</p>`;
-  $('#tv').onclick = () => { if(window.__NJ && __NJ.fs && __NJ.fs.can() && !__NJ.fs.on()) __NJ.fs.toggle(); const s = newSala(); location.href = `${base}?sala=${s}&tv=1&escolher=1${pre?'&jogo='+pre:''}`; };
+  $('#tv').onclick = () => { if(window.__NJ && __NJ.fs && __NJ.fs.can() && !__NJ.fs.on()) __NJ.fs.toggle(); const s = newSala(); try{ sessionStorage.setItem('nj-sala', s); sessionStorage.setItem('nj-tv-'+s, '1'); localStorage.setItem('nj-last', JSON.stringify({ s, t:Date.now(), tv:1 })); history.pushState(null, '', `${base}?sala=${s}&tv=1&escolher=1${pre?'&jogo='+pre:''}`); }catch(e){} tvChooser(s); /* sem mudar de página, para não sair do ecrã inteiro */ };
   $('#ph').onclick = codeEntry;
   if(last) $('#back2').onclick = () => { location.href = `${base}?sala=${last.s}${last.tv?'&tv=1&escolher=1':''}`; };
 }
