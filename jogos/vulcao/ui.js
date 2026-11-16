@@ -160,7 +160,7 @@
       } else switch (V.step) {
         case 'roll': {
           if (!mine) { out = waitBox('🎲', `${wn} vai lançar os dados`, x.need === 6 ? 'Precisa de um 6.' : x.need ? `Precisa de ${x.need} ou mais.` : ''); break; }
-          const txt = x.why === 'gate' ? `Guardião: só o dado normal. Precisas de <b>${x.need} ou mais</b>.` : x.why === 'final' ? `Gongo do Cume: só um <b>6</b> o faz soar!` : WHY[x.why] || WHY.move;
+          const txt = x.why === 'gate' ? `Guardião: só o dado normal. Precisas de <b>${x.need} ou mais</b>.` : x.why === 'final' ? `Gongo do Cume: só o dado normal, e só um <b>6</b> o faz soar!` : WHY[x.why] || WHY.move;
           const left = Math.max(0, Math.ceil((x.ms - ((V.now - x.t0) + (Date.now() - V.at))) / 1000));
           out = `<div class="card hot center"><h2>${x.why === 'final' ? '⛩️ O gongo!' : x.why === 'gate' ? '🗿 Guardião' : '🎲 A tua vez'}</h2><p>${txt}</p><div class="dicerow">${'<div class="dbig n">?</div>'.repeat(Math.min(1, x.n))}${x.n > 1 ? '<div class="dbig g">?</div>' : ''}${x.s ? '<div class="dbig s">?</div>' : ''}${'<div class="dbig b">?</div>'.repeat(x.b)}</div><button class="btn huge sun" data-a="roll">🎲 Lançar</button><p class="muted" style="font-size:13px">${left <= 30 ? `A TV lança por ti daqui a ${left} s.` : ''}</p></div>`; break;
         }

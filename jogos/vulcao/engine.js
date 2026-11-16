@@ -431,7 +431,7 @@
     const p = P(pi); p.tries++;
     const need = 6;
     await cut('summit', { pi, need });
-    const r = await askRoll(pi, 'final', { n: p.dn, b: 0 }, need); if (dead(gen)) return;
+    const r = await askRoll(pi, 'final', { n: 1, s: 0, b: 0 }, need); if (dead(gen)) return;
     if (r >= need) { S.winner = pi; log(`🏆 ${p.name} tirou um 6 e tocou o gongo do Cume!`); push(); ENG.snd('gong'); }
     else { log(`⛩️ ${p.name} falhou o gongo (precisa de um 6).`); ENG.snd('bad'); await banner('Quase!', 'Só um 6 faz soar o gongo. Tenta na próxima vez.', 'bad', 2000); }
   }
