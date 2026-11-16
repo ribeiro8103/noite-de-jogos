@@ -13,7 +13,7 @@
   const MGD = { stop: t => `Carrega em Começar e pára o relógio o mais perto possível dos ${t} segundos. O relógio esconde-se ao fim de 2 segundos!`, reflex: () => 'Quando o ecrã ficar VERDE, toca o mais depressa que conseguires. Quem tocar antes do tempo fica em último.', taps: () => 'Tens 6 segundos para dar o maior número de toques no botão.', min01: () => 'Todos escolhem 0 ou 1 em segredo. Quem ficar na minoria continua; a maioria sai. Os 2 últimos decidem a pedra, papel, tesoura.', ppt: () => 'Todos escolhem ao mesmo tempo. Se só houver dois gestos em jogo, quem perde sai. Ganha o último.', parimpar: () => 'A soma dos dois dados vai ser par ou ímpar? Quem falhar sai. Ganha o último.', unico: () => 'Escolhe um número de 1 a 9. Ganha o número mais alto que mais ninguém escolheu.' };
   const WHY = { move: 'É a tua vez! Lança os dados.', volc: 'Estás dentro do vulcão. Lança para subir.', again: 'Trampolim! Lança outra vez.', duel: 'Duelo de dados: ganha o número mais alto.' };
   const nameOf = (V, i) => V.players[i] ? V.players[i].name : '?';
-  const diceIcons = p => `<i class="di n"></i>${p.dn > 1 ? '<i class="di g"></i>' : ''}${p.db ? '<i class="di b"></i>' : ''}${p.extra ? '<i class="di b"></i>' : ''}`;
+  const diceIcons = p => `<i class="di n"></i>${p.dn > 1 ? '<i class="di g"></i>' : ''}${p.ds ? '<i class="di s"></i>' : ''}${p.db ? '<i class="di b"></i>' : ''}${p.extra ? '<i class="di b"></i>' : ''}`;
   const remaining = (V, x) => x.s * 1000 - ((V.now - x.t0) + (Date.now() - V.at));
   const where = p => p.zone === 'v' ? `🌋 vulcão ${p.vpos + 1}/${D.M}` : p.pos === D.GOAL ? '⛩️ Cume' : `casa ${p.pos}/${D.GOAL}`;
   const acted = (V, i) => { const x = V.x; if (!x) return false; if (V.step === 'vote') return x.votes && x.votes[i] !== undefined; if (V.step === 'mg' || V.step === 'mgwait') return x.res && x.res[i] !== undefined; if (V.step === 'el') return x.picks && x.picks[i] !== undefined; return false; };
@@ -44,7 +44,7 @@
     const tile = (p, sp, i, r, lava) => {
       const t = lava ? 'lava' : sp.t, em = sp.t === '+' ? '+' + sp.v : sp.t === '-' ? '−' + sp.v : D.SPACE[t][0];
       const num = sp.t === '+' || sp.t === '-';
-      return `<g data-a="sel" data-v="${i}"><circle cx="${p.x.toFixed(2)}" cy="${p.z.toFixed(2)}" r="${r}" fill="${D.SPCOL[t]}" stroke="${sel === i ? '#fff' : 'rgba(0,0,0,.35)'}" stroke-width="${sel === i ? r * .32 : r * .12}"/>${lava ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${r * 1.1}" text-anchor="middle">🔥</text>` : em ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${num ? r * 1.05 : r * 1.1}" text-anchor="middle" ${num ? 'fill="#fff" font-weight="900" font-family="Nunito,sans-serif"' : ''}>${em}</text>` : ''}</g>`;
+      return `<g data-a="sel" data-v="${i}"><circle cx="${p.x.toFixed(2)}" cy="${p.z.toFixed(2)}" r="${r}" fill="${t === 'warp' ? D.WARPCOL[sp.v] : D.SPCOL[t]}" stroke="${sel === i ? '#fff' : 'rgba(0,0,0,.35)'}" stroke-width="${sel === i ? r * .32 : r * .12}"/>${lava ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${r * 1.1}" text-anchor="middle">🔥</text>` : em ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${num ? r * 1.05 : r * 1.1}" text-anchor="middle" ${num ? 'fill="#fff" font-weight="900" font-family="Nunito,sans-serif"' : ''}>${em}</text>` : ''}</g>`;
     };
     if (zone === 'v') {
       const pts = D.VPATH;
@@ -62,6 +62,7 @@
       <polygon points="${coast.join(' ')}" fill="#7fe0d6" opacity=".55" transform="scale(1.09)"/><polygon points="${coast.join(' ')}" fill="#f0deb0"/><polygon points="${grass.join(' ')}" fill="#86c46a"/>
       <circle r="38" fill="#6cb257"/><circle r="29" fill="#5a9b4e"/><circle r="24" fill="#9a8168"/><circle r="17.5" fill="#806853"/><circle r="11.5" fill="#5e4a3e"/><circle r="8" fill="url(#lv)"/>
       ${V.erupt > 0 ? '<circle r="10.5" fill="none" stroke="#ff5a1a" stroke-width="2" opacity=".8"><animate attributeName="r" values="9;15;9" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values=".9;0;.9" dur="1.6s" repeatCount="indefinite"/></circle>' : ''}
+      ${(() => { const a = pts[D.RIVER], b = pts[D.RIVER + 1], th = Math.atan2((a.z + b.z) / 2, (a.x + b.x) / 2), c = Math.cos(th), s = Math.sin(th); return `<line x1="${(c * 27).toFixed(1)}" y1="${(s * 27).toFixed(1)}" x2="${(c * 57).toFixed(1)}" y2="${(s * 57).toFixed(1)}" stroke="#3aa9dc" stroke-width="3.4" stroke-linecap="round"/>`; })()}
       <polyline points="${pts.map(p => p.x.toFixed(1) + ',' + p.z.toFixed(1)).join(' ')}" fill="none" stroke="#fff6da" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" opacity=".85"/>`;
     pts.forEach((p, i) => { o += tile(p, D.ISLAND[i], i, 2.55, V.erupt > 0 && D.LAVA_TYPES[D.ISLAND[i].t]); });
     o += tokens(P.map((p, i) => p.zone === 'i' ? i : -1).filter(i => i >= 0), pts, 2.2) + '</svg>';
@@ -161,7 +162,7 @@
           if (!mine) { out = waitBox('🎲', `${wn} vai lançar os dados`, x.need === 6 ? 'Precisa de um 6.' : x.need ? `Precisa de ${x.need} ou mais.` : ''); break; }
           const txt = x.why === 'gate' ? `Guardião: o teu melhor dado tem de ser <b>${x.need} ou mais</b>.` : x.why === 'final' ? `Gongo do Cume: só um <b>6</b> o faz soar!` : WHY[x.why] || WHY.move;
           const left = Math.max(0, Math.ceil((x.ms - ((V.now - x.t0) + (Date.now() - V.at))) / 1000));
-          out = `<div class="card hot center"><h2>${x.why === 'final' ? '⛩️ O gongo!' : x.why === 'gate' ? '🗿 Guardião' : '🎲 A tua vez'}</h2><p>${txt}</p><div class="dicerow">${'<div class="dbig n">?</div>'.repeat(Math.min(1, x.n))}${x.n > 1 ? '<div class="dbig g">?</div>' : ''}${'<div class="dbig b">?</div>'.repeat(x.b)}</div><button class="btn huge sun" data-a="roll">🎲 Lançar</button><p class="muted" style="font-size:13px">${left <= 30 ? `A TV lança por ti daqui a ${left} s.` : ''}</p></div>`; break;
+          out = `<div class="card hot center"><h2>${x.why === 'final' ? '⛩️ O gongo!' : x.why === 'gate' ? '🗿 Guardião' : '🎲 A tua vez'}</h2><p>${txt}</p><div class="dicerow">${'<div class="dbig n">?</div>'.repeat(Math.min(1, x.n))}${x.n > 1 ? '<div class="dbig g">?</div>' : ''}${x.s ? '<div class="dbig s">?</div>' : ''}${'<div class="dbig b">?</div>'.repeat(x.b)}</div><button class="btn huge sun" data-a="roll">🎲 Lançar</button><p class="muted" style="font-size:13px">${left <= 30 ? `A TV lança por ti daqui a ${left} s.` : ''}</p></div>`; break;
         }
         case 'rolling': out = waitBox('🎲', `${wn} tirou ${x.sum}`, V.dice.map(d => `<span class="dbig ${d.t}" style="display:inline-flex;width:44px;height:44px;font-size:22px;margin:3px">${d.v}</span>`).join('')); break;
         case 'pick': {
@@ -194,13 +195,17 @@
           const n = MGN[x.k], inn = x.act.includes(me), ok = x.surv.includes(me), all = x.surv.length === x.act.length;
           out = `<div class="card center"><span class="kind">${n[1]} · ronda ${x.rd}</span><h2>${!inn ? '👀' : all ? '🤝 Ninguém sai' : ok ? '✅ Continuas!' : '❌ Estás fora'}</h2>${x.sum ? `<p>Saiu <b>${x.sum}</b> (${x.sum % 2 ? 'ímpar' : 'par'}).</p>` : ''}${x.c0 !== undefined ? `<p><b>${x.c0}</b> escolheram 0 · <b>${x.c1}</b> escolheram 1</p>` : ''}${x.act.map(i => `<div class="prow">${tok(V.players[i], 's')}<div class="gr" style="text-align:left"><b>${esc(nameOf(V, i))}</b></div><span style="font-size:20px">${ELO[x.k][x.picks[i]][0]} ${x.surv.includes(i) ? '✅' : '❌'}</span></div>`).join('')}</div>`; break;
         }
-        case 'mgres': out = `<div class="card"><span class="kind">Resultado</span><h2>${MGN[x.k][0]} ${MGN[x.k][1]}</h2>${x.rank.map(([i, v], k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b></div><span>${mgVal(x, v)} ${k === 0 ? '<i class="di g"></i>' : k === 1 && x.rank.length >= 3 ? '<i class="di b"></i>' : ''}</span></div>`).join('')}</div>`; break;
+        case 'mgres': out = `<div class="card"><span class="kind">Resultado</span><h2>${MGN[x.k][0]} ${MGN[x.k][1]}</h2>${x.rank.map(([i, v], k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b></div><span>${mgVal(x, v)} ${k === 0 ? '<i class="di g"></i>' : k === 1 && x.rank.length >= 3 ? '<i class="di s"></i>' : k === 2 && x.rank.length >= 4 ? '<i class="di b"></i>' : ''}</span></div>`).join('')}</div>`; break;
         case 'pvres': out = `<div class="card center"><span class="kind">Prémios da prova</span><h2>🎲 Dados desta ronda</h2>${V.players.map(q => `<div class="prow">${tok(q, 's')}<div class="gr" style="text-align:left"><b>${esc(q.name)}</b></div><span>${diceIcons(q)}</span></div>`).join('')}</div>`; break;
         case 'storm': out = waitBox('🌪️', 'Tufão!', 'A roleta escolhe quem ele leva…'); break;
+        case 'river': {
+          if (!mine) { out = waitBox('🌊', `${wn} está à beira do rio`, 'Pedras vermelhas ou azuis? Só um caminho aguenta.'); break; }
+          out = `<div class="card hot center"><span class="kind">Paragem obrigatória</span><h2>🌊 O Rio</h2><p>Há dois caminhos de 3 pedras. Um leva-te à outra margem. O outro afunda-se e a corrente arrasta-te para o vulcão.</p><div class="elrow"><button class="tapbtn red" data-a="river" data-v="0"><span>🔴</span><small>Pedras vermelhas</small></button><button class="tapbtn" style="background:#2f6fe0" data-a="river" data-v="1"><span>🔵</span><small>Pedras azuis</small></button></div>${p.amulet ? '<p class="muted">🧿 O teu amuleto salva-te se caíres.</p>' : ''}</div>`; break;
+        }
         default: out = waitBox(V.erupt > 0 ? '🌋' : '🏝️', V.round ? `Vez de ${esc(nameOf(V, V.turn))}` : 'A começar…', 'Olha para a TV.');
       }
       if (V.ph === 'play') {
-        out += `<div class="card"><h4>Os teus dados nesta ronda</h4><div class="dicerow" style="justify-content:flex-start;margin:4px 0"><div class="dbig n" style="width:44px;height:44px;font-size:15px">1–6</div>${p.dn > 1 ? '<div class="dbig g" style="width:44px;height:44px;font-size:15px">1–6</div>' : ''}${'<div class="dbig b" style="width:44px;height:44px;font-size:15px">1–3</div>'.repeat((p.db ? 1 : 0) + (p.extra ? 1 : 0) + (V.opts.len === 'r' ? 1 : 0))}</div>${p.amulet ? '<p>🧿 Tens um Amuleto de Pedra.</p>' : ''}${V.erupt > 0 ? `<p style="color:var(--coral)">🔥 Lava nas casas especiais por mais ${V.erupt} ronda${V.erupt > 1 ? 's' : ''}.</p>` : ''}</div>`;
+        out += `<div class="card"><h4>Os teus dados nesta ronda</h4><div class="dicerow" style="justify-content:flex-start;margin:4px 0"><div class="dbig n" style="width:44px;height:44px;font-size:15px">1–6</div>${p.dn > 1 ? '<div class="dbig g" style="width:44px;height:44px;font-size:15px">1–6</div>' : ''}${p.ds ? '<div class="dbig s" style="width:44px;height:44px;font-size:15px">1–4</div>' : ''}${'<div class="dbig b" style="width:44px;height:44px;font-size:15px">1–2</div>'.repeat((p.db ? 1 : 0) + (p.extra ? 1 : 0) + (V.opts.len === 'r' ? 1 : 0))}</div>${p.amulet ? '<p>🧿 Tens um Amuleto de Pedra.</p>' : ''}${V.erupt > 0 ? `<p style="color:var(--coral)">🔥 Lava nas casas especiais por mais ${V.erupt} ronda${V.erupt > 1 ? 's' : ''}.</p>` : ''}</div>`;
         out += `<div class="card"><h4>Últimas jogadas</h4><div class="mini-log">${(V.log || []).slice().reverse().map(l => `<div>${esc(l)}</div>`).join('') || '<div class="muted">Ainda nada.</div>'}</div></div>`;
       }
       return out;
@@ -208,13 +213,13 @@
     function tabMap(V, me, p) {
       const zone = P.zone || p.zone, inV = V.players.some(q => q.zone === 'v');
       let info;
-      if (P.sel !== null) { const sp = (zone === 'v' ? D.VOLC : D.ISLAND)[P.sel]; if (sp) { const lava = zone === 'i' && V.erupt > 0 && D.LAVA_TYPES[sp.t], s = D.SPACE[lava ? 'lava' : sp.t]; const here = V.players.filter(q => q.zone === zone && (zone === 'v' ? q.vpos : q.pos) === P.sel).map(q => esc(q.name)).join(', '); info = `<div class="card"><h3>${s[0]} ${s[1]}${sp.v ? ' ' + sp.v : ''} <small class="muted" style="font:700 13px Nunito">· casa ${zone === 'v' ? P.sel + 1 : P.sel}</small></h3><p>${s[2]}</p>${here ? `<p class="muted">Aqui: ${here}</p>` : ''}</div>`; } }
+      if (P.sel !== null) { const sp = (zone === 'v' ? D.VOLC : D.ISLAND)[P.sel]; if (sp) { const lava = zone === 'i' && V.erupt > 0 && D.LAVA_TYPES[sp.t], s = D.SPACE[lava ? 'lava' : sp.t]; const here = V.players.filter(q => q.zone === zone && (zone === 'v' ? q.vpos : q.pos) === P.sel).map(q => esc(q.name)).join(', '); info = `<div class="card"><h3>${s[0]} ${s[1]}${sp.t === 'warp' ? ' → casa ' + D.WARP[P.sel] : sp.v ? ' ' + sp.v : ''} <small class="muted" style="font:700 13px Nunito">· casa ${zone === 'v' ? P.sel + 1 : P.sel}</small></h3><p>${s[2]}</p>${here ? `<p class="muted">Aqui: ${here}</p>` : ''}</div>`; } }
       if (!info) {
         if (p.zone === 'v') info = `<div class="card"><h3>🌋 Estás dentro do vulcão</h3><p>Casa ${p.vpos + 1} de ${D.M}. Um <b>géiser</b> devolve-te à casa ${p.fell} da ilha. A <b>saída</b> leva-te à casa ${ENG.checkpoint(p)}${ENG.checkpoint(p) ? ' (último Guardião)' : ' (Praia)'}.</p></div>`;
         else { const ng = D.GATES[p.gates]; info = `<div class="card"><h3>🏝️ Casa ${p.pos} de ${D.GOAL}</h3><p>${p.pos === D.GOAL ? 'Estás no Cume! Na tua vez tocas o gongo.' : ng !== undefined ? (ng === p.pos ? `Estás no <b>${D.GATE_NAMES[p.gates]}</b>: na tua vez fazes o desafio.` : `Próximo Guardião: casa ${ng} (faltam ${ng - p.pos}).`) : `Já venceste os 3 Guardiões. Faltam ${D.GOAL - p.pos} casas para o Cume.`}</p><p class="muted" style="font-size:13px">Toca numa casa para ver o que faz.</p></div>`; }
       }
       const sw = (inV || p.zone === 'v') ? `<div class="btns" style="margin:0 0 10px"><button class="btn sm ${zone === 'i' ? '' : 'ghost'}" data-a="zone" data-v="i">🏝️ Ilha</button><button class="btn sm ${zone === 'v' ? '' : 'ghost'}" data-a="zone" data-v="v">🌋 Vulcão${inV ? ' (' + V.players.filter(q => q.zone === 'v').length + ')' : ''}</button></div>` : '';
-      const leg = (zone === 'v' ? ['geyser', 'vback', 'exit'] : ['+', '-', 'again', 'luck', 'duel', 'storm', 'swap', 'volc', 'skull', 'gate', 'goal']).map(k => `<span><i class="sq" style="background:${D.SPCOL[k]}">${D.SPACE[k][0]}</i>${D.SPACE[k][1]}</span>`).join('');
+      const leg = (zone === 'v' ? ['geyser', 'vback', 'exit'] : ['+', '-', 'again', 'warp', 'luck', 'duel', 'storm', 'swap', 'volc', 'skull', 'river', 'gate', 'goal']).map(k => `<span><i class="sq" style="background:${D.SPCOL[k]}">${D.SPACE[k][0]}</i>${D.SPACE[k][1]}</span>`).join('');
       return `${sw}<div class="mapwrap ${zone === 'v' ? 'volc' : ''}">${mapSvg(V, me, zone, P.sel)}</div><div style="height:10px"></div>${info}<div class="card"><h4>Legenda</h4><div class="legend">${leg}</div></div>`;
     }
     function tabAll(V, me) {
@@ -290,10 +295,10 @@
         case 'round': { const p = banner(`Ronda ${o.n}`, o.erupt > 0 ? `🔥 Lava nas casas especiais por mais ${o.erupt} ronda${o.erupt > 1 ? 's' : ''}` : '', o.erupt > 0 ? 'lava' : 'info', 1500); await c3('round', o, 300); await p; return; }
         case 'prova': if (T3()) T3().orbit(96, 40); cutov(`<div class="pbox"><div class="k">${o.duel ? 'Duelo no telemóvel' : 'Prova da ronda'}</div><h1>${o.k ? MGN[o.k][0] + ' ' : ''}${esc(o.t)}</h1><div class="d">${o.kind === 'tel' ? (o.k ? esc(MGD[o.k](4)) .replace('dos 4 segundos', 'do tempo pedido') : '') + '<br>📱 Peguem nos telemóveis!' : '🤹 Prova da vida real: larguem os telemóveis!'}</div></div>`); await sleep(o.kind === 'tel' ? 4200 : 2400); cutov(null, false); return;
         case 'prizes': {
-          cutov(`<div class="pbox"><div class="k">Prémios da prova</div><h1>🎲 Dados desta ronda</h1><div class="ranklist">${S.players.map((p, i) => `<div class="r" style="${o.w.includes(i) ? '' : 'background:#eef6f7'}">${tok(p, 's')}<b>${p.bot ? '🤖 ' : ''}${esc(p.name)}</b><span>${p.dn > 1 ? '🥇 dado de ouro' : p.db ? '🥉 dado de bronze' : 'dado normal'} ${diceIcons(p)}</span></div>`).join('')}</div></div>`);
+          cutov(`<div class="pbox"><div class="k">Prémios da prova</div><h1>🎲 Dados desta ronda</h1><div class="ranklist">${S.players.map((p, i) => `<div class="r" style="${o.w.includes(i) ? '' : 'background:#eef6f7'}">${tok(p, 's')}<b>${p.bot ? '🤖 ' : ''}${esc(p.name)}</b><span>${p.dn > 1 ? '🥇 dado de ouro' : p.ds ? '🥈 dado de prata' : p.db ? '🥉 dado de bronze' : 'dado normal'} ${diceIcons(p)}</span></div>`).join('')}</div></div>`);
           await sleep(3400); cutov(null, false); return;
         }
-        case 'rank': cutov(`<div class="pbox"><div class="k">${MGN[o.k][0]} ${MGN[o.k][1]}${o.k === 'stop' ? ` · alvo ${o.target} s` : ''}</div><h1>Classificação</h1><div class="ranklist">${o.rank.map(([i, v], k) => `<div class="r">${tok(S.players[i], 's')}<b>${k + 1}.º ${S.players[i].bot ? '🤖 ' : ''}${esc(nm(i))}</b><span>${mgVal(o, v)} ${k === 0 ? '🥇' : k === 1 && o.rank.length >= 3 ? '🥉' : ''}</span></div>`).join('')}</div></div>`); await sleep(4600); cutov(null, false); return;
+        case 'rank': cutov(`<div class="pbox"><div class="k">${MGN[o.k][0]} ${MGN[o.k][1]}${o.k === 'stop' ? ` · alvo ${o.target} s` : ''}</div><h1>Classificação</h1><div class="ranklist">${o.rank.map(([i, v], k) => `<div class="r">${tok(S.players[i], 's')}<b>${k + 1}.º ${S.players[i].bot ? '🤖 ' : ''}${esc(nm(i))}</b><span>${mgVal(o, v)} ${k === 0 ? '🥇' : k === 1 && o.rank.length >= 3 ? '🥈' : k === 2 && o.rank.length >= 4 ? '🥉' : ''}</span></div>`).join('')}</div></div>`); await sleep(4600); cutov(null, false); return;
         case 'card': { const c = D.LUCK[o.c], dare = c.a === 'dare'; if (T3()) T3().focus(o.who[0]); cutov(`<div class="cardbig"><div class="e">${dare ? '🎭' : '🃏'}</div><h2>${dare ? 'Prenda!' : esc(c.t)}</h2><p>${esc(dare ? D.DARE[o.di] : c.d)}</p></div>`); await sleep(dare ? 1800 : 3000); cutov(null, false); return; }
         case 'wheel': {
           const n = o.list.length, seg = 360 / n, R = 100, idx = o.list.indexOf(o.v), rad = d => (d - 90) * Math.PI / 180;
@@ -329,6 +334,9 @@
         case 'geyser': { const tk = showBanner('♨️ Géiser!', `${nm(o.pi)} volta à ilha`, 'good'); await c3(name, o, 1500); hideBanner(tk); return; }
         case 'exit': { const tk = showBanner('🚪 Saída da gruta', `${nm(o.pi)} escapou do vulcão`, 'good'); await c3(name, o, 1500); hideBanner(tk); return; }
         case 'swap': { const tk = showBanner('🦜 Troca!', `${nm(o.a)} ⇄ ${nm(o.b)}`, 'warn'); await c3(name, o, 1500); hideBanner(tk); return; }
+        case 'riverIntro': { const p = banner('🌊 O Rio', `${nm(o.pi)} tem de escolher: pedras vermelhas ou azuis?`, 'warn', 2000); await c3(name, o, 600); await p; return; }
+        case 'river': { await c3(name, o, 1200); if (!o.ok) await banner('Splash!', o.saved ? 'O amuleto puxa-o para a margem' : `A corrente leva ${nm(o.pi)} para o vulcão`, o.saved ? 'good' : 'bad', 1700); return; }
+        case 'warp': { const tk = showBanner('🌀 Portal!', `${nm(o.pi)} ${o.to > o.from ? 'salta ' + (o.to - o.from) + ' casas para a frente' : 'recua ' + (o.from - o.to) + ' casas'}`, o.to > o.from ? 'good' : 'bad'); await c3(name, o, 1500); hideBanner(tk); return; }
         case 'gate': { const p = banner('🗿 ' + D.GATE_NAMES[o.gi], `${nm(o.pi)} precisa de ${o.need} ou mais para passar`, 'warn', 1900); await c3(name, o); await p; return; }
         case 'gateOpen': { const p = banner('Passou!', 'O Guardião abre caminho', 'good', 1600); await c3(name, o); await p; return; }
         case 'gateFail': { const p = banner('Não passou!', 'Perde a vez e tenta na próxima ronda', 'bad', 1800); await c3(name, o); await p; return; }
@@ -496,6 +504,7 @@
         case 'el': html = `<div class="pbox"><div class="k">Prova de telemóvel · ronda ${x.rd}</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k]())}</div><div class="who">${x.act.map(i => `<span class="pch ${x.picks[i] !== undefined || V.players[i].bot ? 'done' : ''}" style="--c:${D.PCOLORS[V.players[i].col]}">${tok(V.players[i], 's')}${esc(nameOf(V, i))}${x.picks[i] !== undefined || V.players[i].bot ? ' ✅' : ''}</span>`).join('')}</div><div class="foot">Escolham no telemóvel, em segredo</div></div>`; break;
         case 'dare': html = `<div class="cardbig"><div class="e">🎭</div><h2>Prenda de ${esc(nameOf(V, x.who[0]))}</h2><p>${esc(D.DARE[x.di])}</p><p style="margin-top:10px;font-size:16px;opacity:.75">Faz e avança 3 · recusa e recua 3</p></div>`; break;
         case 'pick': prompt = `${{ duel: '⚔️', swap: '🦜', push: '👉' }[x.k]} ${esc(nameOf(V, x.who[0]))} está a escolher…`; break;
+        case 'river': prompt = `🌊 ${esc(nameOf(V, x.who[0]))}: pedras 🔴 vermelhas ou 🔵 azuis?`; break;
         case 'roll': { const p = V.players[x.who[0]]; prompt = `🎲 ${esc(p.name)}, lança os dados ${p.bot ? '' : p.local ? 'no comando do ecrã' : 'no telemóvel'}${x.need === 6 ? ' · precisa de um 6' : x.need ? ` · precisa de ${x.need}+` : ''}`; break; }
       }
     }
@@ -579,7 +588,7 @@
     if (claim !== null) { claim = null; presence(); }
     if (!pad) { $('#padroot').onclick = null; $('#padroot').innerHTML = '<div id="padwrap" style="position:absolute;inset:0"></div>'; pad = makePad($('#padwrap'), { getView: () => padV, me: () => me, send: padSend, local: false }); }
     const was = pad._mine; pad._mine = mustAct(V, me);
-    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'el', 'roll', 'pick', 'dare'].includes(V.step)) { pad.P.tab = 'play'; } }
+    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'el', 'roll', 'pick', 'dare', 'river'].includes(V.step)) { pad.P.tab = 'play'; } }
     pad.render();
   }
   let lastRecl = '';

@@ -23,10 +23,10 @@
   const islanders = ex => S.players.map((p, i) => p.zone === 'i' && i !== ex ? i : -1).filter(i => i >= 0);
   const nextGate = p => D.GATES[p.gates];
   const checkpoint = p => p.gates > 0 ? D.GATES[p.gates - 1] : 0;
-  const normGates = p => { p.gates = Math.max(p.gates, D.GATES.filter(g => g < p.pos).length); };
+  const normGates = p => { p.gates = Math.max(p.gates, D.GATES.filter(g => g < p.pos).length); if (p.pos > D.RIVER) p.river = 1; };
   const dead = gen => gen !== GEN || S.ph !== 'play';
 
-  function newPlayer(o) { return Object.assign({ name: 'Jogador', hat: 0, col: 0, cid: '', local: false, bot: false, pos: 0, zone: 'i', vpos: 0, fell: 0, gates: 0, amulet: 0, extra: 0, dn: 1, db: 0, tries: 0, solo: 0 }, o); }
+  function newPlayer(o) { return Object.assign({ name: 'Jogador', hat: 0, col: 0, cid: '', local: false, bot: false, pos: 0, zone: 'i', vpos: 0, fell: 0, gates: 0, amulet: 0, extra: 0, dn: 1, ds: 0, db: 0, tries: 0, solo: 0, river: 0 }, o); }
 
   // ---------- pedir decisões ----------
   // cfg: who [índices], on(pi, cmd) -> valor para terminar (undefined = continua), ms, dflt(), bot(pi) -> cmd
@@ -70,11 +70,12 @@
   // ---------- dados ----------
   async function askRoll(pi, why, forced, need) {
     const p = P(pi);
-    const d = forced || { n: p.dn, b: (p.db ? 1 : 0) + (p.extra ? 1 : 0) + (S.opts.len === 'r' ? 1 : 0) };
-    await gather('roll', { why, n: d.n, b: d.b, need: need || 0 }, { who: [pi], on: (k, c) => c.a === 'roll' ? 1 : undefined, ms: 60000, dflt: () => 1, bot: () => ({ a: 'roll' }) });
+    const d = forced || { n: p.dn, s: p.ds ? 1 : 0, b: (p.db ? 1 : 0) + (p.extra ? 1 : 0) + (S.opts.len === 'r' ? 1 : 0) };
+    await gather('roll', { why, n: d.n, s: d.s || 0, b: d.b, need: need || 0 }, { who: [pi], on: (k, c) => c.a === 'roll' ? 1 : undefined, ms: 60000, dflt: () => 1, bot: () => ({ a: 'roll' }) });
     const out = [];
     for (let i = 0; i < d.n; i++) out.push({ t: i === 0 ? 'n' : 'g', v: r6() });
-    for (let i = 0; i < d.b; i++) out.push({ t: 'b', v: 1 + rnd(3) });
+    for (let i = 0; i < (d.s || 0); i++) out.push({ t: 's', v: 1 + rnd(4) });
+    for (let i = 0; i < d.b; i++) out.push({ t: 'b', v: 1 + rnd(2) });
     if (!forced && p.extra) p.extra = 0;
     const sum = need ? Math.max(...out.map(o => o.v)) : out.reduce((a, o) => a + o.v, 0);
     S.dice = out; S.step = 'rolling'; S.x = { who: [pi], why, sum, need: need || 0 }; push();
@@ -91,9 +92,36 @@
       const np = p.pos + dir; if (np < 0 || np > D.GOAL) break;
       p.pos = np; moved++; push();
       await tv('hop', pi, quick ? 0.6 : 1);
-      if (dir > 0 && (np === nextGate(p) || np === D.GOAL)) break;
+      if (dir > 0 && (np === nextGate(p) || np === D.GOAL || (np === D.RIVER && !p.river))) break;
     }
     return moved;
+  }
+  async function advance(pi, n, gen) {
+    const p = P(pi); let k = n;
+    while (k > 0) {
+      if (p.zone !== 'i' || dead(gen)) return 'stop';
+      const np = p.pos + 1; if (np > D.GOAL) break;
+      p.pos = np; k--; push(); await tv('hop', pi, 1);
+      if (np === D.GOAL) { await finalTry(pi, gen); return 'stop'; }
+      if (np === nextGate(p)) { const ok = await gateTry(pi, gen); if (!ok || dead(gen)) return 'stop'; if (k > 0) await banner('Caminho livre!', `${p.name} continua mais ${k} casa${k > 1 ? 's' : ''}`, 'good', 1300); }
+      else if (np === D.RIVER && !p.river) { const ok = await riverTry(pi, gen); if (!ok || dead(gen)) return 'stop'; if (k > 0) k--; if (k > 0) await banner('Outra margem!', `${p.name} continua mais ${k} casa${k > 1 ? 's' : ''}`, 'good', 1300); }
+    }
+    return 'land';
+  }
+  async function riverTry(pi, gen) {
+    const p = P(pi);
+    ENG.snd('gate'); await cut('riverIntro', { pi });
+    const v = await gather('river', {}, { who: [pi], ms: 40000, dflt: () => rnd(2), on: (k, c) => c.a === 'river' && (c.v === 0 || c.v === 1) ? c.v : undefined, bot: () => ({ a: 'river', v: rnd(2) }) });
+    if (dead(gen)) return false;
+    const ok = Math.random() < .5, saved = !ok && !!p.amulet;
+    S.step = 'busy'; push();
+    await cut('river', { pi, side: v, ok, saved });
+    if (ok) { p.river = 1; p.pos = D.RIVER + 1; log(`🌊 ${p.name} escolheu as pedras certas e atravessou o rio.`); push(); ENG.snd('good'); await banner('Atravessou!', `${p.name} chegou à outra margem`, 'good', 1500); return true; }
+    if (saved) { p.amulet = 0; log(`🧿 ${p.name} caiu ao rio, mas o amuleto puxou-o para a margem.`); push(); ENG.snd('good'); await cut('amulet', { pi }); return false; }
+    p.fell = p.pos; log(`🌊 ${p.name} caiu ao rio e a corrente levou-o para o vulcão.`);
+    p.zone = 'v'; p.vpos = 0; push(); ENG.snd('fall');
+    await cut('fallIn', { pi });
+    return false;
   }
   async function moveVolc(pi, n) {
     const p = P(pi); const dir = n > 0 ? 1 : -1; let k = Math.abs(n);
@@ -165,7 +193,7 @@
 
   // ---------- prova da ronda ----------
   async function roundProva(gen) {
-    S.players.forEach(p => { p.dn = 1; p.db = 0; });
+    S.players.forEach(p => { p.dn = 1; p.ds = 0; p.db = 0; });
     const H = humans();
     let real = H.length >= 2 && S.opts.mode !== 'tel' && (S.opts.mode === 'real' || Math.random() < 0.7);
     if (!real) return digital(gen);
@@ -191,8 +219,8 @@
       await cut('prova', { kind, t: 'Equipas', A, B });
       await realProva('team', 'TEAM', { A, B }, H); if (dead(gen)) return;
       const r = await vote({ k: 'team', A, B }, H, [0, 1]); const w = r.tie ? await tieBreak([0, 1]) : r.v;
-      const W = w === 0 ? A : B; W.forEach(i => P(i).db = 1); res.w = W; S.first = W.slice();
-      log(`🥉 Ganhou a equipa ${w === 0 ? 'A' : 'B'} (${W.map(nm).join(', ')}): dado de bronze para cada um.`);
+      const W = w === 0 ? A : B; W.forEach(i => P(i).ds = 1); res.w = W; S.first = W.slice();
+      log(`🥉 Ganhou a equipa ${w === 0 ? 'A' : 'B'} (${W.map(nm).join(', ')}): dado de prata para cada um.`);
     }
     res.bots = [];
     S.players.forEach((p, i) => { if (p.bot && Math.random() < 0.5) { p.db = 1; res.bots.push(i); } });
@@ -260,9 +288,9 @@
       const score = i => k === 'stop' ? Math.abs(res[i] - target * 1000) : k === 'reflex' ? res[i] : k === 'unico' ? (cnt(res[i]) === 1 ? -100 - res[i] : -res[i]) : -res[i];
       rank = shuffle(all).sort((a, b) => score(a) - score(b));
     }
-    P(rank[0]).dn = 2; if (rank.length >= 3) P(rank[1]).db = 1;
+    P(rank[0]).dn = 2; if (rank.length >= 3) P(rank[1]).ds = 1; if (rank.length >= 4) P(rank[2]).db = 1;
     S.first = rank.slice();
-    log(`🥇 ${nm(rank[0])} ganhou a prova ${MGT[k]}${rank.length >= 3 ? ` · 🥉 ${nm(rank[1])}` : ''}.`);
+    log(`🥇 ${nm(rank[0])} ganhou a prova ${MGT[k]}${rank.length >= 3 ? ` · 🥈 ${nm(rank[1])}` : ''}${rank.length >= 4 ? ` · 🥉 ${nm(rank[2])}` : ''}.`);
     S.step = 'mgres'; S.x = { k, target, rank: rank.map(i => [i, res[i]]), who: [] }; push();
     ENG.snd('win'); await cut('rank', S.x); await wait(200);
   }
@@ -366,10 +394,13 @@
         if (depth) break;
         log(`🤸 ${p.name} saltou no trampolim.`);
         const r = await askRoll(pi, 'again', { n: 1, b: 0 }); if (dead(gen)) return;
-        await moveIsland(pi, r);
-        if (p.pos === D.GOAL) { await finalTry(pi, gen); return; }
-        if (p.pos === nextGate(p)) { await gateStop(pi); return; }
-        await land(pi, gen, 1); break;
+        if (await advance(pi, r, gen) === 'land') await land(pi, gen, 1);
+        break;
+      }
+      case 'warp': {
+        const to = D.WARP[p.pos]; if (to === undefined) break;
+        const from = p.pos; log(`🌀 ${p.name} entrou no portal e ${to > from ? 'saltou ' + (to - from) + ' casas para a frente' : 'recuou ' + (from - to) + ' casas'}.`);
+        p.pos = to; normGates(p); push(); ENG.snd('swap'); await cut('warp', { pi, from, to }); break;
       }
       case 'luck': await luck(pi, gen); break;
       case 'duel': await duel(pi, gen); break;
@@ -384,7 +415,7 @@
     const p = P(pi), gi = p.gates, need = D.GATE_NEED[gi];
     const judges = humans().filter(k => k !== pi);
     await cut('gate', { pi, gi, need });
-    const r = await askRoll(pi, 'gate', { n: p.dn, b: 0 }, need); if (dead(gen)) return false;
+    const r = await askRoll(pi, 'gate', { n: p.dn, s: 0, b: 0 }, need); if (dead(gen)) return false;
     let ok = r >= need;
     if (!ok && !p.bot && judges.length && S.opts.mode !== 'tel') {
       await banner('Segunda oportunidade', 'Vence o desafio do Guardião e passas na mesma', 'warn', 2400);
@@ -426,11 +457,9 @@
     if (p.zone === 'v') return volcTurn(pi, gen);
     if (p.pos === D.GOAL) return finalTry(pi, gen);
     if (p.pos === nextGate(p)) { const ok = await gateTry(pi, gen); if (!ok || dead(gen)) return; }
+    if (p.pos === D.RIVER && !p.river) { const ok = await riverTry(pi, gen); if (!ok || dead(gen)) return; }
     const r = await askRoll(pi, 'move'); if (dead(gen)) return;
-    await moveIsland(pi, r);
-    if (p.pos === D.GOAL) return finalTry(pi, gen);
-    if (p.pos === nextGate(p)) return gateStop(pi);
-    await land(pi, gen, 0);
+    if (await advance(pi, r, gen) === 'land') await land(pi, gen, 0);
   }
 
   // ---------- ciclo ----------
@@ -461,7 +490,7 @@
   function startGame() {
     if (S.players.length < 2) return false;
     GEN++; PEND = null;
-    S.players.forEach(p => Object.assign(p, { pos: 0, zone: 'i', vpos: 0, fell: 0, gates: 0, amulet: 0, extra: 0, dn: 1, db: 0, tries: 0, solo: 0 }));
+    S.players.forEach(p => Object.assign(p, { pos: 0, zone: 'i', vpos: 0, fell: 0, gates: 0, amulet: 0, extra: 0, dn: 1, ds: 0, db: 0, tries: 0, solo: 0, river: 0 }));
     Object.assign(S, { ph: 'play', round: 0, turn: 0, erupt: 0, winner: -1, log: [], deck: [], used: {}, dice: [], step: 'busy', x: null });
     log('🏝️ Começou a subida ao vulcão. Boa sorte!'); push();
     tv('syncAll');
@@ -481,7 +510,7 @@
   function snap(acks) {
     const st = {
       v: S.v, ph: S.ph, c: S.code, t: S.turn, r: S.round, s: S.step, x: S.x, e: S.erupt, d: S.dice.map(o => o.t + o.v).join(''), w: S.winner, now: Date.now(),
-      P: S.players.map(p => [p.name, p.col, p.hat, p.pos, p.zone === 'v' ? 1 : 0, p.vpos, p.cid, p.local ? 1 : 0, p.bot ? 1 : 0, p.dn, p.db, p.gates, p.amulet, p.extra, p.tries, p.fell]),
+      P: S.players.map(p => [p.name, p.col, p.hat, p.pos, p.zone === 'v' ? 1 : 0, p.vpos, p.cid, p.local ? 1 : 0, p.bot ? 1 : 0, p.dn, p.db, p.gates, p.amulet, p.extra, p.tries, p.fell, p.ds, p.river]),
       o: [S.opts.mode, S.opts.cards ? 1 : 0, S.opts.len], L: S.log.slice(-4), k: acks || {},
     };
     return st;
@@ -489,8 +518,8 @@
   function unsnap(st) {
     return {
       v: st.v, ph: st.ph, code: st.c, turn: st.t, round: st.r, step: st.s, x: st.x, erupt: st.e, winner: st.w, now: st.now, at: Date.now(),
-      dice: (st.d.match(/[ngb]\d/g) || []).map(s => ({ t: s[0], v: +s[1] })),
-      players: st.P.map(a => ({ name: a[0], col: a[1], hat: a[2], pos: a[3], zone: a[4] ? 'v' : 'i', vpos: a[5], cid: a[6], local: !!a[7], bot: !!a[8], dn: a[9], db: a[10], gates: a[11], amulet: a[12], extra: a[13], tries: a[14], fell: a[15] })),
+      dice: (st.d.match(/[ngsb]\d/g) || []).map(s => ({ t: s[0], v: +s[1] })),
+      players: st.P.map(a => ({ name: a[0], col: a[1], hat: a[2], pos: a[3], zone: a[4] ? 'v' : 'i', vpos: a[5], cid: a[6], local: !!a[7], bot: !!a[8], dn: a[9], db: a[10], gates: a[11], amulet: a[12], extra: a[13], tries: a[14], fell: a[15], ds: a[16], river: a[17] })),
       opts: { mode: st.o[0], cards: !!st.o[1], len: st.o[2] }, log: st.L || [], acks: st.k || {},
     };
   }
