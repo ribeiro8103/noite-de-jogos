@@ -415,7 +415,7 @@
     const p = P(pi), gi = p.gates, need = D.GATE_NEED[gi];
     const judges = humans().filter(k => k !== pi);
     await cut('gate', { pi, gi, need });
-    const r = await askRoll(pi, 'gate', { n: p.dn, s: 0, b: 0 }, need); if (dead(gen)) return false;
+    const r = await askRoll(pi, 'gate', { n: 1, s: 0, b: 0 }, need); if (dead(gen)) return false;
     let ok = r >= need;
     if (!ok && !p.bot && judges.length && S.opts.mode !== 'tel') {
       await banner('Segunda oportunidade', 'Vence o desafio do Guardião e passas na mesma', 'warn', 2400);
