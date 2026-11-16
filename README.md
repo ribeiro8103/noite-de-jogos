@@ -3,6 +3,7 @@
 Os jogos da malta, para jogar com a TV como tabuleiro e o telemóvel de cada um como comando. Sem contas e sem instalar nada.
 
 - **O Clube**: jogo de festa com roleta, apostas, provas e contratos secretos (Edição Fátima)
+- **Ilha do Vulcão**: corrida até ao cume com provas da vida real, duelos e um vulcão em 3D
 - **Cova da Fortuna**: o Monopoly de Fátima
 - **Ilha Nova**: colonos, estradas e um corsário (estilo Catan)
 - **O Cofre de São Segredo**: mistério na vila
