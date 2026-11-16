@@ -355,6 +355,21 @@
   } };
   if(SALA && !(GAME==='portal' && IS_HUB)){ if(IS_HUB) startHub(); else startClient(); }
 
+  // ====================== ecrã inteiro ======================
+  // O browser sai do ecrã inteiro sempre que a página muda (portal -> jogo). Se o tinhas ligado,
+  // volta a entrar sozinho no primeiro toque na página nova.
+  const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const fsWant = () => { try{ return sessionStorage.getItem('nj-fs') === '1'; }catch(e){ return false; } };
+  function fsEnter(){ const d = document.documentElement, f = d.requestFullscreen || d.webkitRequestFullscreen; if(!f) return; try{ const r = f.call(d); if(r && r.catch) r.catch(()=>{}); }catch(e){} }
+  function fsExit(){ const f = document.exitFullscreen || document.webkitExitFullscreen; try{ if(f && fsEl()) f.call(document); }catch(e){} }
+  window.__NJ.fs = { on: () => !!fsEl(), can: () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen),
+    toggle(){ const on = !fsEl(); try{ sessionStorage.setItem('nj-fs', on ? '1' : '0'); }catch(e){} if(on) fsEnter(); else fsExit(); return on; } };
+  let fsLeftAt = 0;
+  document.addEventListener('fullscreenchange', () => { if(fsEl()){ try{ sessionStorage.setItem('nj-fs', '1'); }catch(e){} } else fsLeftAt = Date.now(); document.querySelectorAll('[data-njfs]').forEach(b => { b.textContent = fsEl() ? '🗗 Sair do ecrã inteiro' : '⛶ Ecrã inteiro'; }); });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ try{ sessionStorage.setItem('nj-fs', '0'); }catch(x){} } }, true);
+  document.addEventListener('pointerdown', e => { if(e.target.closest && e.target.closest('[data-njfs]')) return; if(fsWant() && !fsEl() && Date.now() - fsLeftAt > 1500) fsEnter(); }, true);
+  document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-njfs]'); if(!b) return; e.preventDefault(); window.__NJ.fs.toggle(); });
+
   // ====================== dados 3D partilhados ======================
   function loadDados(cb){ if(window.Dados3D) return cb(true); const sc = document.createElement('script'); sc.src = BASE + 'dados3d.bundle.js'; sc.onload = () => cb(!!window.Dados3D); sc.onerror = () => cb(false); document.head.appendChild(sc); }
   window.__NJ.dados = (vals, opts) => new Promise(res => loadDados(ok => { if(!ok) return res(false); window.Dados3D.show(vals, opts).then(res, () => res(false)); }));
@@ -368,7 +383,7 @@
       #njbar.min span,#njbar.min a{display:none}`;
     const st = document.createElement('style'); st.textContent = css;
     const bar = document.createElement('div'); bar.id = 'njbar';
-    bar.innerHTML = `<i class="d"></i><span>A ligar…</span>${IS_HUB ? `<a href="#" data-njqr>📱 Entrar</a><a href="${BASE}?sala=${SALA}&tv=1&escolher=1">⇄ Trocar de jogo</a>` : `<b style="color:#f3d68c;letter-spacing:.1em">${SALA}</b><a href="#" data-njre>↻</a>`}`;
+    bar.innerHTML = `<i class="d"></i><span>A ligar…</span>${IS_HUB ? `<a href="#" data-njqr>📱 Entrar</a><a href="${BASE}?sala=${SALA}&tv=1&escolher=1">⇄ Trocar de jogo</a><a href="#" data-njfs>⛶ Ecrã inteiro</a>` : `<b style="color:#f3d68c;letter-spacing:.1em">${SALA}</b><a href="#" data-njre>↻</a>`}`;
     bar.addEventListener('click', e => {
       if(e.target.closest('[data-njre]')){ e.preventDefault(); location.reload(); }
       if(e.target.closest('[data-njqr]')){ e.preventDefault(); showQR(); }

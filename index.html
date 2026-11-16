@@ -52,9 +52,11 @@ button,input{font:inherit;color:inherit}
 .small{font-size:.85em}
 .steps{line-height:1.8;color:var(--cream)}
 a{color:var(--gold2)}
+.fsbtn{position:fixed;right:12px;top:12px;z-index:50;border:1.5px solid var(--line);background:rgba(8,14,11,.82);color:var(--gold2);border-radius:999px;padding:9px 16px;font:600 14px/1 inherit;cursor:pointer;backdrop-filter:blur(6px)} .fsbtn:hover{border-color:var(--gold)}
 </style>
 </head>
 <body>
+<button class="fsbtn" data-njfs id="fsbtn">⛶ Ecrã inteiro</button>
 <div class="wrap" id="app"></div>
 <script>
 (function(){
@@ -72,6 +74,7 @@ const ALPH = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const newSala = () => Array.from({length:4}, ()=>ALPH[Math.random()*ALPH.length|0]).join('');
 const base = location.href.split('?')[0].split('#')[0];
 const app = $('#app');
+if(!(window.__NJ && __NJ.fs && __NJ.fs.can())){ const b = $('#fsbtn'); if(b) b.style.display = 'none'; }
 const head = `<div class="logo">Noite de Jogos<small>os jogos da malta</small></div>`;
 
 function lastSala(){ try{ const o = JSON.parse(localStorage.getItem('nj-last')||'null'); if(o && o.s && Date.now()-o.t < 12*3600*1000) return o; }catch(e){} return null; }
@@ -84,7 +87,7 @@ function home(){
     <button class="btn ghost" id="ph">📱 Sou jogador<small>entrar com o código da sala</small></button></div>
     <div class="games" style="margin-top:8px">${GAMES.map(g=>`<div class="game" style="--c:${g.c};cursor:default"><div class="ic">${g.ic}</div><h2>${esc(g.n)}</h2><p>${esc(g.d)}</p><div class="meta">${g.meta.map(m=>`<span>${esc(m)}</span>`).join('')}</div></div>`).join('')}</div>
     <p class="center muted small">Dica: a TV e os telemóveis funcionam melhor ligados à mesma rede Wi-Fi.</p>`;
-  $('#tv').onclick = () => { const s = newSala(); location.href = `${base}?sala=${s}&tv=1&escolher=1${pre?'&jogo='+pre:''}`; };
+  $('#tv').onclick = () => { if(window.__NJ && __NJ.fs && __NJ.fs.can() && !__NJ.fs.on()) __NJ.fs.toggle(); const s = newSala(); location.href = `${base}?sala=${s}&tv=1&escolher=1${pre?'&jogo='+pre:''}`; };
   $('#ph').onclick = codeEntry;
   if(last) $('#back2').onclick = () => { location.href = `${base}?sala=${last.s}${last.tv?'&tv=1&escolher=1':''}`; };
 }
