@@ -13,4 +13,4 @@ Os jogos da malta, para jogar com a TV como tabuleiro e o telemóvel de cada um 
 2. Os amigos leem o QR (ou escrevem o código da sala) no telemóvel.
 3. Escolhe o jogo na TV: os telemóveis entram sozinhos.
 
-A TV liga-se aos telemóveis diretamente (WebRTC, via PeerJS). Funciona melhor com todos na mesma rede Wi-Fi.
+A TV liga-se aos telemóveis por dois caminhos ao mesmo tempo: diretamente (WebRTC, via PeerJS) e por retransmissão em servidores MQTT públicos (WebSocket). Basta um deles funcionar, por isso também dá com dados móveis.

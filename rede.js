@@ -12,7 +12,8 @@
   if(!SALA && GAME!=='portal'){ location.replace(BASE + '?jogo=' + GAME); return; }
   if(SALA){ sessionStorage.setItem('nj-sala', SALA); if(IS_HUB) sessionStorage.setItem('nj-tv-'+SALA, '1'); try{ localStorage.setItem('nj-last', JSON.stringify({ s:SALA, t:Date.now(), tv:IS_HUB?1:0 })); }catch(e){} }
   window.__SALA = SALA; window.__SALA_HUB = IS_HUB; window.__NJ_GAME = GAME;
-  window.__SALA_URL = BASE + '?sala=' + SALA;
+  // o QR mostrado dentro de um jogo leva o telemóvel diretamente a esse jogo
+  window.__SALA_URL = BASE + (GAME==='portal' ? '' : 'jogos/' + GAME + '/') + '?sala=' + SALA;
   const HUB_ID = 'noitejogos-v1-' + SALA.toLowerCase();
   const LSget = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
   const LSset = (k,v) => { try{ localStorage.setItem(k,v); }catch(e){} };
@@ -56,7 +57,7 @@
   function applyLocal(path, v){ if(v===null) store.delete(path); else store.set(path, clone(v)); persist(); fire(path); }
   function dbWrite(path, v){
     applyLocal(path, v);
-    if(IS_HUB) broadcast({ t:'dbset', path, v });
+    if(IS_HUB) broadcast({ t:'dbset', path, v, q: ++Q });
     else send({ t:'dbw', path, v });
     return Promise.resolve();
   }
@@ -88,7 +89,7 @@
   const rooms = new Map();
   const localRooms = new Map(); // nome -> { handlers:Set, peers:[] }
   const newId = () => 'p' + Math.random().toString(36).slice(2,10);
-  let MY_ID = IS_HUB ? 'hub' : newId();
+  const MY_ID = IS_HUB ? 'hub' : newId(); // identidade estável deste separador, seja qual for o caminho da ligação
   function localRoom(name){
     if(!localRooms.has(name)){
       const st = { handlers:new Set(), peers:[], presence:{} };
@@ -100,7 +101,7 @@
         onPeers(fn){ st.handlers.add(fn); setTimeout(()=>{ try{ fn({ peers: st.peers, joined: st.peers, left:[], updated:[] }); }catch(e){} }, 0); return () => st.handlers.delete(fn); },
         peers(){ return st.peers; },
         emit(){ return Promise.resolve(); }, on(){ return () => {}; },
-        connected(){ return IS_HUB || connOpen; }, onConnection(fn){ setTimeout(()=>fn(IS_HUB||connOpen),0); return ()=>{}; },
+        connected(){ return linked(); }, onConnection(fn){ setTimeout(()=>fn(linked()),0); return ()=>{}; },
         leave(){ if(IS_HUB){ const r = rooms.get(name); if(r){ r.delete('hub'); hubBroadcastRoom(name); } } else send({ t:'leave', room:name }); localRooms.delete(name); return Promise.resolve(); },
       };
       localRooms.set(name, st);
@@ -121,18 +122,70 @@
     onPeers(fn){ return localRoom('__lobby').onPeers(fn); },
     peers(){ return localRoom('__lobby').peers(); },
     emit(){ return Promise.resolve(); }, on(){ return () => {}; },
-    connected(){ return IS_HUB || connOpen; }, onConnection(fn){ setTimeout(()=>fn(IS_HUB||connOpen),0); return ()=>{}; },
+    connected(){ return linked(); }, onConnection(fn){ setTimeout(()=>fn(linked()),0); return ()=>{}; },
     canSendToClaudeSession(){ return Promise.resolve('off'); }, sendToClaudeSession(){ return Promise.reject({ code:'claude_unavailable' }); },
   };
 
   // ====================== LIGAÇÃO ======================
-  let peer = null, conn = null, connOpen = false, queue = [], hubInfo = {};
-  const clients = new Map(); // id -> { conn, rooms:Set }
-  let gameCode = '';
+  // Dois caminhos em paralelo entre a TV e cada telemóvel:
+  //  1) WebRTC direto (PeerJS)   2) retransmissão por servidores MQTT públicos (WebSocket).
+  // Basta um deles funcionar. Todas as mensagens são idempotentes, por isso podem chegar repetidas.
+  let peer = null, conn = null, rtcOpen = false, queue = [], hubInfo = {}, lastData = 0, lastRtc = 0, everLinked = false;
+  const clients = new Map(); // id -> { id, conn, rooms:Set, seen, rtcSeen }
+  let gameCode = '', Q = Date.now();
+  const linked = () => IS_HUB || ((rtcOpen || MQ.up()) && Date.now() - lastData < 9000);
   function noteGameCode(name){ const m = name.match(/-(\d{4})(?:-|$)/); if(m && !gameCode){ gameCode = m[1]; broadcast({ t:'info', info: info() }); } }
   function info(){ return { game: GAME, code: gameCode, base: BASE }; }
-  function send(msg){ if(IS_HUB) return; if(connOpen && conn){ try{ conn.send(msg); }catch(e){ queue.push(msg); } } else { queue.push(msg); if(queue.length>200) queue = queue.slice(-200); } }
-  function broadcast(msg){ clients.forEach(c=>{ try{ if(c.conn.open) c.conn.send(msg); }catch(e){} }); }
+
+  // ---------- retransmissão MQTT ----------
+  const MQ = (() => {
+    const TOP = 'noitejogos/v1/' + SALA.toLowerCase() + '/';
+    let list = [['broker.emqx.io', 8084, '/mqtt', true], ['broker.hivemq.com', 8884, '/mqtt', true], ['mqtt.eclipseprojects.io', 443, '/mqtt', true]];
+    let ov = qs.get('mqtt'); if(ov) try{ sessionStorage.setItem('nj-mq', ov); }catch(e){} else try{ ov = sessionStorage.getItem('nj-mq'); }catch(e){}
+    if(ov === 'off') list = []; else if(ov){ const [h,p] = ov.split(':'); list = [[h, +(p||1884), '/', false]]; }
+    const cl = list.map(b => ({ b, c:null, up:false })); let seq = Date.now(), sub = '', onMsg = null, onUp = null, started = false;
+    const seen = new Set(), seenQ = [];
+    function open(x){
+      if(!window.Paho || !started) return;
+      try{ if(x.c){ x.c.onConnectionLost = () => {}; x.c.onMessageArrived = () => {}; try{ x.c.disconnect(); }catch(e){} } }catch(e){}
+      x.up = false; clearTimeout(x.t);
+      const P = window.Paho, C = P.Client || (P.MQTT && P.MQTT.Client); if(!C) return;
+      const c = x.c = new C(x.b[0], x.b[1], x.b[2], 'nj' + MY_ID + Math.random().toString(36).slice(2,8));
+      const again = ms => { if(x.c !== c) return; x.up = false; clearTimeout(x.t); x.t = setTimeout(() => open(x), ms); if(onUp) onUp(); };
+      c.onConnectionLost = () => again(2500);
+      c.onMessageArrived = m => {
+        if(x.c !== c) return; let o; try{ o = JSON.parse(m.payloadString); }catch(e){ return; }
+        if(!o || typeof o.i !== 'string') return; const k = o.i + ':' + o.n; if(seen.has(k)) return; seen.add(k); seenQ.push(k); if(seenQ.length > 800) seen.delete(seenQ.shift());
+        try{ onMsg(o.i, o.m); }catch(e){ console.error(e); }
+      };
+      try{ c.connect({ useSSL: x.b[3], timeout: 8, keepAliveInterval: 20, cleanSession: true, mqttVersion: 4,
+        onSuccess: () => { if(x.c !== c) return; try{ c.subscribe(TOP + sub, { qos: 0 }); }catch(e){ again(2500); return; } x.up = true; if(onUp) onUp(true); },
+        onFailure: () => again(6000) }); }catch(e){ again(6000); }
+    }
+    return {
+      start(s, fn, up){ sub = s; onMsg = fn; onUp = up; if(!cl.length) return; started = true;
+        const go = () => cl.forEach(open);
+        if(window.Paho) go(); else { const sc = document.createElement('script'); sc.src = BASE + 'paho-mqtt-min.js'; sc.onload = go; document.head.appendChild(sc); } },
+      pub(t, m){ const payload = JSON.stringify({ i: MY_ID, n: ++seq, m }); cl.forEach(x => { if(x.up){ try{ x.c.send(TOP + t, payload, 0, false); }catch(e){ x.up = false; clearTimeout(x.t); x.t = setTimeout(() => open(x), 1500); } } }); },
+      up(){ return cl.some(x => x.up); },
+      kick(){ cl.forEach(x => { if(!x.up) open(x); }); },
+      _n(){ return cl.filter(x => x.up).length; },
+    };
+  })();
+
+  // telemóvel -> TV (pelos dois caminhos, quando existem)
+  function send(msg){
+    if(IS_HUB) return; let ok = false;
+    if(rtcOpen && conn){ try{ conn.send(msg); ok = true; }catch(e){} }
+    if(MQ.up()){ MQ.pub('up', msg); ok = true; }
+    if(!ok || (msg.t === 'dbw' && !linked())){ queue.push(msg); if(queue.length > 200) queue = queue.slice(-200); }
+  }
+  // TV -> telemóvel (direto se estiver vivo; senão pela retransmissão)
+  function sendTo(rec, msg){
+    if(rec.conn && rec.conn.open && Date.now() - (rec.rtcSeen||0) < 8000){ try{ rec.conn.send(msg); return; }catch(e){} }
+    MQ.pub('dn/' + rec.id, msg);
+  }
+  function broadcast(msg){ clients.forEach(rec => sendTo(rec, msg)); }
   const pendingRoom = new Set(); let roomT = null;
   function hubBroadcastRoom(name){ pendingRoom.add(name); if(roomT) return; roomT = setTimeout(flushRooms, 30); }
   function flushRooms(){
@@ -141,68 +194,84 @@
       const r = rooms.get(name); if(!r) return;
       const list = [...r.entries()].map(([id,p])=>({ id, p }));
       deliverPeers(name, list);
-      clients.forEach((c,id)=>{ if(c.rooms.has(name) && c.conn.open){ try{ c.conn.send({ t:'peers', room:name, list }); }catch(e){} } });
+      const q = ++Q;
+      clients.forEach(rec=>{ if(rec.rooms.has(name)) sendTo(rec, { t:'peers', room:name, list, q }); });
     });
     pendingRoom.clear();
   }
   function hubSetPresence(name, id, p){ if(!rooms.has(name)) rooms.set(name, new Map()); rooms.get(name).set(id, p); hubBroadcastRoom(name); }
-  function updatePhones(){ setStatus({ phones: clients.size, ok:true, text: `Sala ${SALA} · ${clients.size} telemóve${clients.size===1?'l':'is'} ligado${clients.size===1?'':'s'}` }); }
+  let hubNote = '';
+  function updatePhones(){
+    const net = (peer && peer.open) || MQ.up();
+    setStatus({ phones: clients.size, ok: !!net, text: net ? `Sala ${SALA} · ${clients.size} telemóve${clients.size===1?'l':'is'} ligado${clients.size===1?'':'s'}` : (hubNote || 'Sem ligação à internet. A tentar outra vez…') });
+  }
 
   function loadPeer(cb){
     if(window.Peer) return cb();
-    const s = document.createElement('script'); s.src = BASE + 'peerjs.min.js'; s.onload = cb; s.onerror = () => setStatus({ ok:false, text:'Não consegui carregar a rede. Verifica a internet.' }); document.head.appendChild(s);
+    const s = document.createElement('script'); s.src = BASE + 'peerjs.min.js'; s.onload = cb; s.onerror = () => { hubNote = 'Não consegui carregar a rede. Verifica a internet.'; if(IS_HUB) updatePhones(); }; document.head.appendChild(s);
   }
+  function hubClient(id){ let rec = clients.get(id); const isNew = !rec; if(isNew){ rec = { id, conn:null, rooms:new Set(), seen:Date.now(), rtcSeen:0 }; clients.set(id, rec); updatePhones(); } return [rec, isNew]; }
+  function hello(rec){ sendTo(rec, { t:'hello', info: info(), db: [...store.entries()] }); }
   function startHub(){
+    MQ.start('up', (id, m) => { if(id === 'hub' || !m) return; const [rec, isNew] = hubClient(id); if(isNew || m.t === 'hi') hello(rec); hubData(id, m, false); }, () => updatePhones());
     loadPeer(()=>{
       const make = () => {
         peer = new Peer(HUB_ID, peerOpts());
-        peer.on('open', () => { updatePhones(); });
+        peer.on('open', () => { hubNote = ''; updatePhones(); });
         peer.on('connection', c => {
+          const id = String((c.metadata && c.metadata.id) || c.peer).slice(0, 24);
           c.on('open', () => {
-            const old = clients.get(c.peer); if(old && old.conn!==c){ try{ old.conn.close(); }catch(e){} }
-            const rec = { conn:c, rooms: old ? old.rooms : new Set(), uid:null, seen:Date.now() }; clients.set(c.peer, rec); updatePhones();
+            const [rec] = hubClient(id);
+            if(rec.conn && rec.conn !== c){ try{ rec.conn.close(); }catch(e){} }
+            rec.conn = c; rec.seen = rec.rtcSeen = Date.now(); updatePhones();
             try{ c.send({ t:'hello', info: info(), db: [...store.entries()] }); }catch(e){}
           });
-          c.on('data', m => hubData(c.peer, m));
-          const bye = () => { const rec = clients.get(c.peer); if(!rec || rec.conn!==c) return; clients.delete(c.peer); rec.rooms.forEach(name=>{ const r = rooms.get(name); if(r){ r.delete(c.peer); hubBroadcastRoom(name); } }); updatePhones(); };
+          c.on('data', m => hubData(id, m, true));
+          const bye = () => { const rec = clients.get(id); if(!rec || rec.conn !== c) return; rec.conn = null; rec.seen = Math.min(rec.seen, Date.now() - 12000); };
           c.on('close', bye); c.on('error', bye);
         });
-        peer.on('disconnected', () => { setStatus({ text:'A religar ao servidor…' }); try{ peer.reconnect(); }catch(e){} });
+        peer.on('disconnected', () => { hubNote = 'A religar ao servidor…'; updatePhones(); try{ peer.reconnect(); }catch(e){} });
         peer.on('error', e => {
-          if(e && e.type==='unavailable-id'){ setStatus({ ok:false, text:'A sala ainda está ocupada por outra TV… a tentar outra vez.' }); try{ peer.destroy(); }catch(x){} setTimeout(make, 4000); }
-          else if(e && (e.type==='network' || e.type==='server-error' || e.type==='socket-error' || e.type==='socket-closed')){ setStatus({ ok:false, text:'Sem ligação ao servidor de salas. A tentar outra vez…' }); setTimeout(()=>{ try{ peer.destroy(); }catch(x){} make(); }, 5000); }
+          if(e && e.type==='unavailable-id'){ hubNote = 'A sala ainda está ocupada por outra TV… a tentar outra vez.'; updatePhones(); try{ peer.destroy(); }catch(x){} setTimeout(make, 4000); }
+          else if(e && (e.type==='network' || e.type==='server-error' || e.type==='socket-error' || e.type==='socket-closed')){ hubNote = 'Sem ligação ao servidor de salas. A tentar outra vez…'; updatePhones(); const p0 = peer; setTimeout(()=>{ if(peer !== p0) return; if(p0.open && !p0.disconnected) return; try{ p0.destroy(); }catch(x){} make(); }, 5000); }
         });
       };
       make();
     });
   }
-  function dropClient(id){ const rec = clients.get(id); if(!rec) return; clients.delete(id); try{ rec.conn.close(); }catch(e){} rec.rooms.forEach(name=>{ const r = rooms.get(name); if(r){ r.delete(id); hubBroadcastRoom(name); } }); updatePhones(); }
-  if(IS_HUB) setInterval(()=>{ const now = Date.now(); clients.forEach((c,id)=>{ if(now - (c.seen||0) > 20000) dropClient(id); else { try{ if(c.conn.open) c.conn.send({ t:'ping' }); }catch(e){} } }); if(peer && peer.disconnected && !peer.destroyed){ try{ peer.reconnect(); }catch(e){} } }, 3000);
-  function hubData(id, m){
+  function dropClient(id){ const rec = clients.get(id); if(!rec) return; clients.delete(id); try{ if(rec.conn) rec.conn.close(); }catch(e){} rec.rooms.forEach(name=>{ const r = rooms.get(name); if(r){ r.delete(id); hubBroadcastRoom(name); } }); updatePhones(); }
+  if(IS_HUB) setInterval(()=>{ const now = Date.now(); clients.forEach((c,id)=>{ if(now - (c.seen||0) > 20000) dropClient(id); else sendTo(c, { t:'ping' }); }); if(peer && peer.disconnected && !peer.destroyed){ try{ peer.reconnect(); }catch(e){} } updatePhones(); }, 3000);
+  function hubData(id, m, viaRtc){
     const rec = clients.get(id); if(!rec || !m || typeof m!=='object') return;
-    rec.seen = Date.now();
-    if(m.t==='pong' || m.t==='ping') return;
+    rec.seen = Date.now(); if(viaRtc) rec.rtcSeen = rec.seen;
+    if(m.t==='pong' || m.t==='ping' || m.t==='hi') return;
     if(m.t==='join'){ rec.rooms.add(m.room); if(!rooms.has(m.room)) rooms.set(m.room, new Map()); if(!rooms.get(m.room).has(id)) rooms.get(m.room).set(id, {}); hubBroadcastRoom(m.room); }
-    else if(m.t==='pres'){ rec.rooms.add(m.room); hubSetPresence(m.room, id, m.p||{}); }
+    else if(m.t==='pres'){ rec.rooms.add(m.room); const r = rooms.get(m.room); if(r && JSON.stringify(r.get(id)) === JSON.stringify(m.p||{})) return; hubSetPresence(m.room, id, m.p||{}); }
     else if(m.t==='leave'){ rec.rooms.delete(m.room); const r = rooms.get(m.room); if(r){ r.delete(id); hubBroadcastRoom(m.room); } }
-    else if(m.t==='dbw'){ if(typeof m.path==='string'){ applyLocal(m.path, m.v===undefined?null:m.v); broadcast({ t:'dbset', path:m.path, v:m.v===undefined?null:m.v }); } }
+    else if(m.t==='dbw'){ if(typeof m.path==='string'){ const v = m.v===undefined?null:m.v; if(JSON.stringify(store.has(m.path)?store.get(m.path):null) === JSON.stringify(v)) return; applyLocal(m.path, v); broadcast({ t:'dbset', path:m.path, v, q: ++Q }); } }
   }
-  let dbReady = IS_HUB, dbWaiters = [], reconnT = null, lastData = 0;
+  let dbReady = IS_HUB, dbWaiters = [], reconnT = null, lastHi = 0;
   let notOpenSince = Date.now(), peerGen = 0;
-  function startClient(){ loadPeer(()=>{ makeClientPeer(); setInterval(clientWatch, 2000); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) clientWatch(true); }); window.addEventListener('online', ()=>clientWatch(true)); window.addEventListener('pageshow', ()=>clientWatch(true)); }); }
+  function paintLink(){ const ok = linked(); if(ok) everLinked = true; setStatus({ ok, text: ok ? `Ligado à sala ${SALA}` : everLinked ? 'Ligação à TV perdida. A religar…' : (rtcOpen || MQ.up() || (peer && peer.open)) ? `À espera da TV da sala ${SALA}…` : 'Sem ligação. A tentar outra vez…' }); }
+  function clientIn(m, viaRtc){ lastData = Date.now(); if(viaRtc) lastRtc = lastData; if(m && m.t !== 'ping') clientData(m); if(!status.ok) paintLink(); }
+  function startClient(){
+    MQ.start('dn/' + MY_ID, (id, m) => { if(id === 'hub') clientIn(m, false); }, up => { if(up){ lastHi = Date.now(); MQ.pub('up', { t:'hi' }); } paintLink(); });
+    loadPeer(()=>{ makeClientPeer(); });
+    setInterval(clientWatch, 2000); document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) clientWatch(true); }); window.addEventListener('online', ()=>clientWatch(true)); window.addEventListener('pageshow', ()=>clientWatch(true));
+  }
   function makeClientPeer(){
+    if(!window.Peer) return;
     const gen = ++peerGen;
     try{ if(conn) conn.close(); }catch(e){} try{ if(peer) peer.destroy(); }catch(e){}
-    conn = null; connOpen = false;
-    MY_ID = newId();
-    peer = new Peer(MY_ID, peerOpts());
+    conn = null; rtcOpen = false;
+    peer = new Peer(MY_ID + 'r' + gen + Math.random().toString(36).slice(2,5), peerOpts());
     peer.on('open', () => { if(gen===peerGen) connect(); });
     peer.on('error', e => {
       if(gen!==peerGen) return;
       const t = e && e.type;
-      if(t==='peer-unavailable'){ setStatus({ ok:false, text:`À espera da TV da sala ${SALA}…` }); retry(); }
-      else if(t==='unavailable-id' || t==='invalid-id' || t==='browser-incompatible'){ setTimeout(()=>{ if(gen===peerGen) makeClientPeer(); }, 1000); }
-      else { setStatus({ ok:false, text:'Sem ligação. A tentar outra vez…' }); retry(); }
+      if(t==='unavailable-id' || t==='invalid-id' || t==='browser-incompatible'){ setTimeout(()=>{ if(gen===peerGen) makeClientPeer(); }, 1000); }
+      else retry();
+      paintLink();
     });
     peer.on('disconnected', () => { if(gen!==peerGen) return; try{ peer.reconnect(); }catch(e){} });
     peer.on('close', () => { if(gen===peerGen) setTimeout(()=>{ if(gen===peerGen) makeClientPeer(); }, 1500); });
@@ -210,43 +279,50 @@
   // vigia: liga-se de novo sozinho se a ligação morrer (ecrã bloqueado, rede que caiu, etc.)
   function clientWatch(now){
     const t = Date.now();
-    if(connOpen){
-      notOpenSince = t;
-      if(t - lastData > 9000){ connOpen = false; setStatus({ ok:false, text:'Ligação à TV perdida. A religar…' }); try{ conn.close(); }catch(e){} connect(); }
-      else { try{ conn.send({ t:'pong' }); }catch(e){} }
-      return;
+    if(now) MQ.kick();
+    if(rtcOpen && t - lastRtc > 9000){ rtcOpen = false; try{ conn.close(); }catch(e){} connect(); }
+    if(rtcOpen) notOpenSince = t;
+    else if(window.Peer && (!peer || peer.destroyed || t - notOpenSince > 12000)){ notOpenSince = t; makeClientPeer(); }
+    else if(now) connect();
+    if(rtcOpen || MQ.up()){
+      if(rtcOpen){ try{ conn.send({ t:'pong' }); }catch(e){} }
+      if(MQ.up()){ if(t - lastData > 5000 && t - lastHi > 4000){ lastHi = t; MQ.pub('up', { t:'hi' }); } else MQ.pub('up', { t:'pong' }); }
     }
-    if(!peer || peer.destroyed || t - notOpenSince > 12000){ notOpenSince = t; makeClientPeer(); return; }
-    if(now) connect();
+    paintLink();
   }
   function retry(){ clearTimeout(reconnT); reconnT = setTimeout(connect, 2500); }
-  window.__NJ._dbg = () => ({ open: connOpen, age: Date.now()-lastData, id: MY_ID, peerOpen: !!(peer&&peer.open), destroyed: !!(peer&&peer.destroyed) });
-  window.__NJ._kill = (mode) => { if(mode==='silent'){ const c = conn; conn = { send(){}, close(){}, on(){} }; connOpen = true; c && c.removeAllListeners && c.removeAllListeners(); return; } try{ peer.destroy(); }catch(e){} };
+  window.__NJ._dbg = () => ({ linked: linked(), rtc: rtcOpen, mq: MQ._n(), age: Date.now()-lastData, id: MY_ID, peerOpen: !!(peer&&peer.open), clients: clients.size });
+  window.__NJ._kill = (what) => { if(what==='rtc'){ window.Peer = null; try{ if(conn) conn.close(); }catch(e){} try{ peer.destroy(); }catch(e){} rtcOpen = false; return; } try{ peer.destroy(); }catch(e){} };
   function connect(){
+    if(!window.Peer) return;
     if(!peer || peer.destroyed){ makeClientPeer(); return; }
     if(peer.disconnected){ try{ peer.reconnect(); }catch(e){} retry(); return; }
     if(!peer.open) { retry(); return; }
     try{ if(conn) conn.close(); }catch(e){}
-    const c = peer.connect(HUB_ID, { reliable:true });
-    conn = c; connOpen = false;
-    const timeout = setTimeout(()=>{ if(conn===c && !connOpen) retry(); }, 8000);
+    const c = peer.connect(HUB_ID, { reliable:true, metadata:{ id: MY_ID } });
+    conn = c; rtcOpen = false;
+    const timeout = setTimeout(()=>{ if(conn===c && !rtcOpen) retry(); }, 8000);
     c.on('open', () => {
       if(conn!==c) return;
-      clearTimeout(timeout); connOpen = true; lastData = Date.now(); notOpenSince = Date.now();
-      setStatus({ ok:true, text:`Ligado à sala ${SALA}` });
-      localRooms.forEach((st,name)=>{ c.send({ t:'join', room:name }); if(Object.keys(st.presence).length) c.send({ t:'pres', room:name, p:st.presence }); });
-      const q = queue; queue = []; q.forEach(m=>{ if(m.t==='dbw') c.send(m); });
+      clearTimeout(timeout); rtcOpen = true; lastData = lastRtc = Date.now(); notOpenSince = Date.now();
+      resync(); paintLink();
     });
-    c.on('data', m => { if(conn!==c) return; lastData = Date.now(); if(m && m.t==='ping'){ try{ c.send({ t:'pong' }); }catch(e){} return; } clientData(m); });
-    c.on('close', () => { if(conn!==c) return; connOpen = false; setStatus({ ok:false, text:'Ligação à TV perdida. A religar…' }); retry(); });
-    c.on('error', () => { if(conn!==c) return; connOpen = false; retry(); });
+    c.on('data', m => { if(conn!==c) return; clientIn(m, true); });
+    c.on('close', () => { if(conn!==c) return; rtcOpen = false; paintLink(); retry(); });
+    c.on('error', () => { if(conn!==c) return; rtcOpen = false; retry(); });
   }
+  // volta a dizer à TV em que salas estou e o que tenho pendente
+  function resync(){
+    localRooms.forEach((st,name)=>{ send({ t:'join', room:name }); if(Object.keys(st.presence).length) send({ t:'pres', room:name, p:st.presence }); });
+    const q = queue; queue = []; q.forEach(m=>{ if(m.t==='dbw') send(m); });
+  }
+  const lastQ = {};
   function clientData(m){
     if(!m || typeof m!=='object') return;
-    if(m.t==='hello'){ hubInfo = m.info||{}; store.clear(); (m.db||[]).forEach(([k,v])=>store.set(k,v)); [...new Set(subs.map(s=>s.path))].forEach(p=>{ subs.filter(s=>s.path===p).forEach(s=>{ try{ s.fn(); }catch(e){} }); }); dbReady = true; dbWaiters.splice(0).forEach(f=>f()); onInfo(); }
+    if(m.t==='hello'){ Object.keys(lastQ).forEach(k=>delete lastQ[k]); hubInfo = m.info||{}; store.clear(); (m.db||[]).forEach(([k,v])=>store.set(k,v)); [...new Set(subs.map(s=>s.path))].forEach(p=>{ subs.filter(s=>s.path===p).forEach(s=>{ try{ s.fn(); }catch(e){} }); }); dbReady = true; dbWaiters.splice(0).forEach(f=>f()); lastData = Date.now(); resync(); onInfo(); }
     else if(m.t==='info'){ hubInfo = m.info||{}; onInfo(); }
-    else if(m.t==='peers'){ deliverPeers(m.room, m.list||[]); }
-    else if(m.t==='dbset'){ applyLocal(m.path, m.v); }
+    else if(m.t==='peers'){ if(m.q){ const k = 'r:' + m.room; if(m.q <= (lastQ[k]||0)) return; lastQ[k] = m.q; } deliverPeers(m.room, m.list||[]); }
+    else if(m.t==='dbset'){ if(m.q){ const k = 'd:' + m.path; if(m.q <= (lastQ[k]||0)) return; lastQ[k] = m.q; } applyLocal(m.path, m.v); }
   }
   // o telemóvel segue o jogo escolhido na TV
   function onInfo(){
