@@ -380,13 +380,16 @@
     const css = `#njbar{position:fixed;left:8px;bottom:8px;z-index:9999;font:600 12px/1.2 system-ui,sans-serif;color:#f3ead6;background:rgba(8,14,11,.82);border:1px solid rgba(216,178,90,.45);border-radius:999px;padding:6px 10px;display:flex;gap:8px;align-items:center;backdrop-filter:blur(6px);max-width:calc(100vw - 16px)}
       #njbar .d{width:8px;height:8px;border-radius:50%;background:#d9534f;flex:none} #njbar.ok .d{background:#4cc38a}
       #njbar a{color:#f3d68c;text-decoration:none;white-space:nowrap} #njbar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      #njbar.min span,#njbar.min a{display:none}`;
+      #njbar.min span,#njbar.min a{display:none}
+      #njbar.pad{left:auto;bottom:auto;right:6px;top:calc(6px + env(safe-area-inset-top));padding:5px 9px;font-size:11px;max-width:70vw}
+      #njbar.pad.ok:not(.open){padding:0;gap:0;top:calc(3px + env(safe-area-inset-top));right:3px;background:transparent;border:0;backdrop-filter:none} #njbar.pad.ok:not(.open) .d{width:9px;height:9px;box-shadow:0 0 0 2px rgba(0,0,0,.35)} #njbar.pad.ok:not(.open)>*:not(.d){display:none}`;
     const st = document.createElement('style'); st.textContent = css;
-    const bar = document.createElement('div'); bar.id = 'njbar';
+    const bar = document.createElement('div'); bar.id = 'njbar'; if(!IS_HUB) bar.className = 'pad';
     bar.innerHTML = `<i class="d"></i><span>A ligar…</span>${IS_HUB ? `<a href="#" data-njqr>📱 Entrar</a><a href="${BASE}?sala=${SALA}&tv=1&escolher=1">⇄ Trocar de jogo</a><a href="#" data-njfs>⛶ Ecrã inteiro</a>` : `<b style="color:#f3d68c;letter-spacing:.1em">${SALA}</b><a href="#" data-njre>↻</a>`}`;
     bar.addEventListener('click', e => {
       if(e.target.closest('[data-njre]')){ e.preventDefault(); location.reload(); }
       if(e.target.closest('[data-njqr]')){ e.preventDefault(); showQR(); }
+      if(!IS_HUB && !e.target.closest('a')){ bar.classList.toggle('open'); clearTimeout(bar._t); bar._t = setTimeout(() => bar.classList.remove('open'), 5000); }
     });
     const mount = () => { document.head.appendChild(st); document.body.appendChild(bar); bar.addEventListener('dblclick', ()=>bar.classList.toggle('min')); };
     if(document.body) mount(); else document.addEventListener('DOMContentLoaded', mount);

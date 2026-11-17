@@ -8,19 +8,19 @@
   const hatE = k => D.HATS[k] ? D.HATS[k][0] : '🙂';
   const tok = (p, cls) => `<span class="tok ${cls || ''}" style="background:${D.PCOLORS[p.col]}">${hatE(p.hat)}</span>`;
   const KIND = { all: 'Todos contra todos', '1vN': '1 contra o resto', team: 'Equipas', duel: 'Duelo 1 contra 1', gate: 'Desafio do Guardião', tel: 'Prova de telemóvel' };
-  const MGN = { stop: ['⏱️', 'Relógio Cego'], reflex: ['⚡', 'Reflexos'], taps: ['🔨', 'Martelada'], min01: ['🔢', '0 ou 1'], ppt: ['✊', 'Pedra, Papel, Tesoura'], parimpar: ['🎲', 'Par ou Ímpar'], unico: ['🎯', 'Número Único'] };
+  const MGN = { stop: ['⏱️', 'Relógio Cego'], reflex: ['⚡', 'Reflexos'], taps: ['🔨', 'Martelada'], min01: ['🔢', '0 ou 1'], ppt: ['✊', 'Pedra, Papel, Tesoura'], parimpar: ['🎲', 'Par ou Ímpar'], unico: ['🔢', 'Número Único'], roleta: ['🎡', 'Roleta'], soma: ['🎯', 'Adivinha a Soma'] };
   const ELO = { min01: [['0', '0'], ['1', '1']], ppt: [['✊', 'Pedra'], ['✋', 'Papel'], ['✌️', 'Tesoura']], parimpar: [['2️⃣', 'Par'], ['1️⃣', 'Ímpar']] };
-  const MGD = { stop: t => `Carrega em Começar e pára o relógio o mais perto possível dos ${t} segundos. O relógio esconde-se ao fim de 2 segundos!`, reflex: () => 'Quando o ecrã ficar VERDE, toca o mais depressa que conseguires. Quem tocar antes do tempo fica em último.', taps: () => 'Tens 6 segundos para dar o maior número de toques no botão.', min01: () => 'Todos escolhem 0 ou 1 em segredo. Quem ficar na minoria continua; a maioria sai. Os 2 últimos decidem a pedra, papel, tesoura.', ppt: () => 'Todos escolhem ao mesmo tempo. Se só houver dois gestos em jogo, quem perde sai. Ganha o último.', parimpar: () => 'A soma dos dois dados vai ser par ou ímpar? Quem falhar sai. Ganha o último.', unico: () => 'Escolhe um número de 1 a 9. Ganha o número mais alto que mais ninguém escolheu.' };
-  const WHY = { move: 'É a tua vez! Lança os dados.', volc: 'Estás dentro do vulcão. Lança para subir.', again: 'Trampolim! Lança outra vez.', duel: 'Duelo de dados: ganha o número mais alto.' };
+  const MGD = { stop: t => `Carrega em Começar e pára o relógio o mais perto possível dos ${t} segundos. O relógio esconde-se ao fim de 2 segundos!`, reflex: () => 'Quando o ecrã ficar VERDE, toca o mais depressa que conseguires. Quem tocar antes do tempo fica em último.', taps: () => 'Tens 6 segundos para dar o maior número de toques no botão.', min01: () => 'Todos escolhem 0 ou 1 em segredo. Quem ficar na minoria continua; a maioria sai. Os 2 últimos decidem a pedra, papel, tesoura.', ppt: () => 'Todos escolhem ao mesmo tempo. Se só houver dois gestos em jogo, quem perde sai. Ganha o último.', parimpar: () => 'A soma dos dois dados vai ser par ou ímpar? Quem falhar sai. Ganha o último.', unico: () => 'Escolhe um número de 1 a 9. Ganha o número mais alto que mais ninguém escolheu.', roleta: () => 'Escolhe um número de 1 a 12. A roleta gira na TV: ganha quem ficar mais perto do número que sair (o 12 está ao lado do 1).', soma: () => 'A TV vai lançar 3 dados. Diz quanto vai dar a soma (de 3 a 18). Ganha quem ficar mais perto.' };
+  const WHY = { move: 'É a tua vez! Lança os dados.', volc: 'Estás dentro do vulcão. Lança para subir.', again: 'Trampolim! Lança outra vez.', double: '🎉 Dobradinha! Lança mais um dado normal e soma.', duel: 'Duelo de dados: ganha o número mais alto.' };
   const nameOf = (V, i) => V.players[i] ? V.players[i].name : '?';
   const diceIcons = p => `<i class="di n"></i>${p.dn > 1 ? '<i class="di g"></i>' : ''}${p.ds ? '<i class="di s"></i>' : ''}${p.db ? '<i class="di b"></i>' : ''}${p.extra ? '<i class="di b"></i>' : ''}`;
   const remaining = (V, x) => x.s * 1000 - ((V.now - x.t0) + (Date.now() - V.at));
   const where = p => p.zone === 'v' ? `🌋 vulcão ${p.vpos + 1}/${D.M}` : p.pos === D.GOAL ? '⛩️ Cume' : `casa ${p.pos}/${D.GOAL}`;
-  const acted = (V, i) => { const x = V.x; if (!x) return false; if (V.step === 'vote') return x.votes && x.votes[i] !== undefined; if (V.step === 'mg' || V.step === 'mgwait') return x.res && x.res[i] !== undefined; if (V.step === 'el') return x.picks && x.picks[i] !== undefined; return false; };
+  const acted = (V, i) => { const x = V.x; if (!x) return false; if (V.step === 'vote') return x.votes && x.votes[i] !== undefined; if (V.step === 'mg' || V.step === 'mgwait') return x.res && x.res[i] !== undefined; if (V.step === 'el') return x.picks && x.picks[i] !== undefined; if (V.step === 'mgintro') return x.rd && !!x.rd[i]; return false; };
   const mustAct = (V, i) => !!(V.ph === 'play' && V.x && V.x.who && V.x.who.includes(i) && !acted(V, i));
   const voteLabel = (V, x, v) => {
     if (x.k === 'all' || x.k === 'duel') return `${hatE(V.players[v].hat)} ${esc(nameOf(V, v))}`;
-    if (x.k === '1vN') return v === 1 ? `${hatE(V.players[x.solo].hat)} ${esc(nameOf(V, x.solo))} (sozinho)` : '👥 O resto do grupo';
+    if (x.k === '1vN') return v === 1 ? `${hatE(V.players[x.solo].hat)} ${esc(nameOf(V, x.solo))} ganhou sozinho` : '👥 Ganhou o grupo';
     if (x.k === 'team') return `Equipa ${v === 0 ? 'A' : 'B'}: ${(v === 0 ? x.A : x.B).map(i => esc(nameOf(V, i))).join(', ')}`;
     return v === 1 ? '👍 Passou' : '👎 Falhou';
   };
@@ -28,7 +28,7 @@
     const ch = (i, extra) => `<span class="pch ${extra || ''}" style="--c:${D.PCOLORS[V.players[i].col]}">${tok(V.players[i], 's')}${esc(nameOf(V, i))}</span>`;
     if (x.k === 'duel') return `${ch(x.a)}<span class="vs">VS</span>${ch(x.b)}`;
     if (x.k === '1vN') return `${ch(x.solo)}<span class="vs">VS</span>${x.P.filter(i => i !== x.solo).map(i => ch(i)).join('')}`;
-    if (x.k === 'team') return `<b>A</b>${x.A.map(i => ch(i)).join('')}<span class="vs">VS</span><b>B</b>${x.B.map(i => ch(i)).join('')}`;
+    if (x.k === 'team') return `<b>A</b>${x.A.map(i => ch(i)).join('')}<span class="vs">VS</span><b>B</b>${x.B.map(i => ch(i)).join('')}${x.arb >= 0 ? `<span style="margin-left:10px">⚖️ Árbitro:</span>${ch(x.arb)}` : ''}`;
     if (x.k === 'gate') return ch(x.solo);
     return (x.P || []).map(i => ch(i)).join('');
   };
@@ -42,7 +42,7 @@
       return `<g>${i === me ? `<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r * 1.2}" fill="none" stroke="#fff" stroke-width="${r * .22}"><animate attributeName="r" values="${r};${r * 1.9};${r}" dur="1.4s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0;1" dur="1.4s" repeatCount="indefinite"/></circle>` : ''}<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${r}" fill="${D.PCOLORS[p.col]}" stroke="#fff" stroke-width="${r * .2}"/><text x="${x.toFixed(2)}" y="${(y + r * .42).toFixed(2)}" font-size="${r * 1.15}" text-anchor="middle">${hatE(p.hat)}</text></g>`;
     }).join('');
     const tile = (p, sp, i, r, lava) => {
-      const t = lava ? 'lava' : sp.t, em = sp.t === '+' ? '+' + sp.v : sp.t === '-' ? '−' + sp.v : D.SPACE[t][0];
+      const t = lava ? 'lava' : (sp.t === 'skull' && V.skullOff) ? 'skulloff' : sp.t, em = sp.t === '+' ? '+' + sp.v : sp.t === '-' ? '−' + sp.v : D.SPACE[t][0];
       const num = sp.t === '+' || sp.t === '-';
       return `<g data-a="sel" data-v="${i}"><circle cx="${p.x.toFixed(2)}" cy="${p.z.toFixed(2)}" r="${r}" fill="${t === 'warp' ? D.WARPCOL[sp.v] : D.SPCOL[t]}" stroke="${sel === i ? '#fff' : 'rgba(0,0,0,.35)'}" stroke-width="${sel === i ? r * .32 : r * .12}"/>${lava ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${r * 1.1}" text-anchor="middle">🔥</text>` : em ? `<text x="${p.x.toFixed(2)}" y="${(p.z + r * .4).toFixed(2)}" font-size="${num ? r * 1.05 : r * 1.1}" text-anchor="middle" ${num ? 'fill="#fff" font-weight="900" font-family="Nunito,sans-serif"' : ''}>${em}</text>` : ''}</g>`;
     };
@@ -138,9 +138,10 @@
         else if (done || g.phase === 2) out += `<p style="font-size:19px">⚡ ${g.val || x.res[me]} ms. À espera dos outros…</p>`;
         else if (V.step === 'mgwait') out += `<p>${MGD.reflex()}</p><button class="tapbtn red" data-tap="early">ESPERA…</button>`;
         else out += `<button class="tapbtn green" data-tap="go">TOCA!</button>`;
-      } else if (x.k === 'unico') {
+      } else if (ENG.NUMLIM[x.k]) {
+        const L = ENG.NUMLIM[x.k], nums = []; for (let n = L[0]; n <= L[1]; n++) nums.push(n);
         if (done) out += `<p style="font-size:19px">Escolheste o <b>${x.res[me]}</b>. À espera dos outros…</p>`;
-        else out += `<p>${MGD.unico()}</p><div class="numgrid">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="btn sun" data-a="mg" data-v="${n}">${n}</button>`).join('')}</div>`;
+        else out += `<p>${MGD[x.k]()}</p><div class="numgrid ${nums.length > 12 ? 'n4' : ''}">${nums.map(n => `<button class="btn sun" data-a="mg" data-v="${n}">${n}</button>`).join('')}</div>`;
       } else if (x.k === 'stop') {
         if (g.phase === 0 && !done) out += `<p>${MGD.stop(x.target)}</p><button class="tapbtn" data-a="mgstart">▶ Começar</button>`;
         else if (g.phase === 1) out += `<p class="center" style="font-size:20px">Pára aos <b>${x.target} segundos</b></p><div class="ptimer" id="mgclock">0.0 s</div><button class="tapbtn sun" data-tap="stop" style="height:32vh;margin-top:10px">✋ PARAR</button>`;
@@ -182,6 +183,11 @@
           if (acted(V, me)) { out = waitBox('✅', 'Voto registado', `${Object.keys(x.votes).length} de ${x.who.length} já votaram.`); break; }
           out = `<div class="card hot"><span class="kind">Votação</span><h2>🗳️ ${q}</h2><div class="opts">${x.opts.map(v => `<button class="btn ${x.k === 'gate' ? (v ? 'good' : 'bad') : ''}" data-a="vote" data-v="${v}">${voteLabel(V, x, v)}</button>`).join('')}</div><p class="muted" style="font-size:13px">Ganha a maioria. Empate: ${x.k === 'gate' ? 'passa' : 'decide o dado'}.</p></div>`; break;
         }
+        case 'mgintro': {
+          const n = MGN[x.k];
+          if (!x.who.includes(me)) { out = waitBox(n[0], `${n[1]}`, 'Os outros estão a ler as regras do minijogo.'); break; }
+          out = `<div class="card hot center"><span class="kind">${x.duel ? 'Duelo no telemóvel' : x.mini ? 'Casa de Minijogo' : 'Minijogo da ronda'}</span><h2>${n[0]} ${n[1]}</h2><p style="font-size:18px">${esc(MGD[x.k](x.target))}</p>${x.duel ? '<p class="muted">Quem ganhar o duelo avança 3, quem perder recua 3.</p>' : x.mini ? '<p class="muted">1.º lugar avança 3 casas, 2.º avança 1.</p>' : '<p class="muted">🥇 1.º: dado de ouro (1–6) · 🥈 2.º: prata (1–4) · 🥉 3.º: bronze (1–2). A classificação também decide a ordem de jogada.</p>'}${acted(V, me) ? `<p style="font-size:18px">✅ Pronto! À espera dos outros (${Object.keys(x.rd).length}/${x.who.length}).</p>` : '<button class="btn huge good" data-a="ok">✅ Percebi</button>'}</div>`; break;
+        }
         case 'mgwait': case 'mg': out = mgCard(V, me, x); break;
         case 'el': {
           const n = MGN[x.k], inn = x.act.includes(me), mp = x.picks[me];
@@ -195,7 +201,7 @@
           const n = MGN[x.k], inn = x.act.includes(me), ok = x.surv.includes(me), all = x.surv.length === x.act.length;
           out = `<div class="card center"><span class="kind">${n[1]} · ronda ${x.rd}</span><h2>${!inn ? '👀' : all ? '🤝 Ninguém sai' : ok ? '✅ Continuas!' : '❌ Estás fora'}</h2>${x.sum ? `<p>Saiu <b>${x.sum}</b> (${x.sum % 2 ? 'ímpar' : 'par'}).</p>` : ''}${x.c0 !== undefined ? `<p><b>${x.c0}</b> escolheram 0 · <b>${x.c1}</b> escolheram 1</p>` : ''}${x.act.map(i => `<div class="prow">${tok(V.players[i], 's')}<div class="gr" style="text-align:left"><b>${esc(nameOf(V, i))}</b></div><span style="font-size:20px">${ELO[x.k][x.picks[i]][0]} ${x.surv.includes(i) ? '✅' : '❌'}</span></div>`).join('')}</div>`; break;
         }
-        case 'mgres': out = `<div class="card"><span class="kind">Resultado</span><h2>${MGN[x.k][0]} ${MGN[x.k][1]}</h2>${x.rank.map(([i, v], k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b></div><span>${mgVal(x, v)} ${k === 0 ? '<i class="di g"></i>' : k === 1 && x.rank.length >= 3 ? '<i class="di s"></i>' : k === 2 && x.rank.length >= 4 ? '<i class="di b"></i>' : ''}</span></div>`).join('')}</div>`; break;
+        case 'mgres': out = `<div class="card"><span class="kind">Resultado</span><h2>${MGN[x.k][0]} ${MGN[x.k][1]}</h2>${x.out ? `<p>Saiu <b>${x.out}</b>.</p>` : ''}${x.rank.map(([i, v], k) => `<div class="prow">${tok(V.players[i], 's')}<div class="gr"><b>${k + 1}.º ${esc(nameOf(V, i))}</b></div><span>${mgVal(x, v)} ${k === 0 ? '<i class="di g"></i>' : k === 1 && x.rank.length >= 3 ? '<i class="di s"></i>' : k === 2 && x.rank.length >= 4 ? '<i class="di b"></i>' : ''}</span></div>`).join('')}</div>`; break;
         case 'pvres': out = `<div class="card center"><span class="kind">Prémios da prova</span><h2>🎲 Dados desta ronda</h2>${V.players.map(q => `<div class="prow">${tok(q, 's')}<div class="gr" style="text-align:left"><b>${esc(q.name)}</b></div><span>${diceIcons(q)}</span></div>`).join('')}</div>`; break;
         case 'storm': out = waitBox('🌪️', 'Tufão!', 'A roleta escolhe quem ele leva…'); break;
         case 'river': {
@@ -213,13 +219,13 @@
     function tabMap(V, me, p) {
       const zone = P.zone || p.zone, inV = V.players.some(q => q.zone === 'v');
       let info;
-      if (P.sel !== null) { const sp = (zone === 'v' ? D.VOLC : D.ISLAND)[P.sel]; if (sp) { const lava = zone === 'i' && V.erupt > 0 && D.LAVA_TYPES[sp.t], s = D.SPACE[lava ? 'lava' : sp.t]; const here = V.players.filter(q => q.zone === zone && (zone === 'v' ? q.vpos : q.pos) === P.sel).map(q => esc(q.name)).join(', '); info = `<div class="card"><h3>${s[0]} ${s[1]}${sp.t === 'warp' ? ' → casa ' + D.WARP[P.sel] : sp.v ? ' ' + sp.v : ''} <small class="muted" style="font:700 13px Nunito">· casa ${zone === 'v' ? P.sel + 1 : P.sel}</small></h3><p>${s[2]}</p>${here ? `<p class="muted">Aqui: ${here}</p>` : ''}</div>`; } }
+      if (P.sel !== null) { const sp = (zone === 'v' ? D.VOLC : D.ISLAND)[P.sel]; if (sp) { const lava = zone === 'i' && V.erupt > 0 && D.LAVA_TYPES[sp.t], skOff = zone === 'i' && sp.t === 'skull' && V.skullOff, s = D.SPACE[lava ? 'lava' : skOff ? 'skulloff' : sp.t]; const here = V.players.filter(q => q.zone === zone && (zone === 'v' ? q.vpos : q.pos) === P.sel).map(q => esc(q.name)).join(', '); info = `<div class="card"><h3>${s[0]} ${s[1]}${sp.t === 'warp' ? ' → casa ' + D.WARP[P.sel] : sp.v ? ' ' + sp.v : ''} <small class="muted" style="font:700 13px Nunito">· casa ${zone === 'v' ? P.sel + 1 : P.sel}</small></h3><p>${s[2]}</p>${here ? `<p class="muted">Aqui: ${here}</p>` : ''}</div>`; } }
       if (!info) {
         if (p.zone === 'v') info = `<div class="card"><h3>🌋 Estás dentro do vulcão</h3><p>Casa ${p.vpos + 1} de ${D.M}. Um <b>géiser</b> devolve-te à casa ${p.fell} da ilha. A <b>saída</b> leva-te à casa ${ENG.checkpoint(p)}${ENG.checkpoint(p) ? ' (último Guardião)' : ' (Praia)'}.</p></div>`;
         else { const ng = D.GATES[p.gates]; info = `<div class="card"><h3>🏝️ Casa ${p.pos} de ${D.GOAL}</h3><p>${p.pos === D.GOAL ? 'Estás no Cume! Na tua vez tocas o gongo.' : ng !== undefined ? (ng === p.pos ? `Estás no <b>${D.GATE_NAMES[p.gates]}</b>: na tua vez fazes o desafio.` : `Próximo Guardião: casa ${ng} (faltam ${ng - p.pos}).`) : `Já venceste os 3 Guardiões. Faltam ${D.GOAL - p.pos} casas para o Cume.`}</p><p class="muted" style="font-size:13px">Toca numa casa para ver o que faz.</p></div>`; }
       }
       const sw = (inV || p.zone === 'v') ? `<div class="btns" style="margin:0 0 10px"><button class="btn sm ${zone === 'i' ? '' : 'ghost'}" data-a="zone" data-v="i">🏝️ Ilha</button><button class="btn sm ${zone === 'v' ? '' : 'ghost'}" data-a="zone" data-v="v">🌋 Vulcão${inV ? ' (' + V.players.filter(q => q.zone === 'v').length + ')' : ''}</button></div>` : '';
-      const leg = (zone === 'v' ? ['geyser', 'vback', 'exit'] : ['+', '-', 'again', 'warp', 'luck', 'duel', 'storm', 'swap', 'volc', 'skull', 'river', 'gate', 'goal']).map(k => `<span><i class="sq" style="background:${D.SPCOL[k]}">${D.SPACE[k][0]}</i>${D.SPACE[k][1]}</span>`).join('');
+      const leg = (zone === 'v' ? ['geyser', 'vback', 'exit'] : ['+', '-', 'again', 'warp', 'luck', 'duel', 'mini', 'storm', 'swap', 'volc', 'skull', 'river', 'gate', 'goal']).map(k => `<span><i class="sq" style="background:${D.SPCOL[k]}">${D.SPACE[k][0]}</i>${D.SPACE[k][1]}</span>`).join('');
       return `${sw}<div class="mapwrap ${zone === 'v' ? 'volc' : ''}">${mapSvg(V, me, zone, P.sel)}</div><div style="height:10px"></div>${info}<div class="card"><h4>Legenda</h4><div class="legend">${leg}</div></div>`;
     }
     function tabAll(V, me) {
@@ -231,7 +237,7 @@
     return { render, P };
   }
   const prog = p => p.zone === 'i' ? p.pos : ENG.checkpoint(p) - .5 + p.vpos / 100;
-  const mgVal = (x, v) => v === null || v === undefined ? '' : x.k === 'unico' ? 'n.º ' + v + (x.rank.filter(r => r[1] === v).length > 1 ? ' (repetido)' : '') : x.k === 'stop' ? (v >= 99999 ? '—' : (v / 1000).toFixed(2) + ' s') : x.k === 'reflex' ? (v >= 9999 ? '🚫' : v + ' ms') : v + ' toques';
+  const mgVal = (x, v) => v === null || v === undefined ? '' : (x.k === 'roleta' || x.k === 'soma') ? `disse ${v}${x.out ? ' · ' + (x.k === 'roleta' ? (d => Math.min(d, 12 - d))(Math.abs(v - x.out) % 12) : Math.abs(v - x.out)) + ' de distância' : ''}` : x.k === 'unico' ? 'n.º ' + v + (x.rank.filter(r => r[1] === v).length > 1 ? ' (repetido)' : '') : x.k === 'stop' ? (v >= 99999 ? '—' : (v / 1000).toFixed(2) + ' s') : x.k === 'reflex' ? (v >= 9999 ? '🚫' : v + ' ms') : v + ' toques';
 
   // ===================== REDE =====================
   const Net = {
@@ -278,14 +284,14 @@
   function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 
   const TVA = {
-    syncAll() { if (T3()) T3().syncAll(); },
+    syncAll() { if (T3()) { T3().syncAll(); T3().setSkulls(!!S.skullOff); } },
     async turnFx(pi) { const p = S.players[pi]; const tk = showBanner(`Vez de ${p.name}`, p.zone === 'v' ? 'Dentro do vulcão' : p.pos === D.GOAL ? 'No Cume: toca o gongo!' : '', 'info'); if (T3()) await T3().focus(pi); else await sleep(700); await sleep(500); hideBanner(tk); },
     banner,
     async focus(pi) { if (T3()) await T3().focus(pi); else await sleep(400); },
     async hop(pi, sp) { Sound.hop(); if (T3()) await T3().hop(pi, sp); else await sleep(260); },
     async rollDice(pi, out, sum, why, need) {
       if (T3()) await T3().rollDice(out); else await sleep(700);
-      const el = $('#dicesum'); const pn = S.players[pi] ? esc(S.players[pi].name) : ''; el.innerHTML = `${sum}<small>${why === 'pi' ? (sum % 2 ? 'ÍMPAR' : 'PAR') : need ? `${pn} precisava de ${need === 6 ? 'um 6' : need + '+'} ${sum >= need ? '✅' : '❌'}` : out.length > 1 ? out.map(o => o.v).join(' + ') : pn}</small>`; el.classList.add('show');
+      const el = $('#dicesum'); const pn = S.players[pi] ? esc(S.players[pi].name) : ''; el.innerHTML = `${sum}<small>${why === 'soma' ? 'soma dos 3 dados' : why === 'pi' ? (sum % 2 ? 'ÍMPAR' : 'PAR') : need ? `${pn} precisava de ${need === 6 ? 'um 6' : need + '+'} ${sum >= need ? '✅' : '❌'}` : out.length > 1 ? out.map(o => o.v).join(' + ') : pn}</small>`; el.classList.add('show');
       await sleep(need ? 1500 : 1000); el.classList.remove('show'); if (T3()) await T3().clearDice();
     },
     async cut(name, o) {
@@ -293,12 +299,25 @@
       switch (name) {
         case 'intro': $('#title').classList.add('show'); await c3('intro', o, 2500); $('#title').classList.remove('show'); return;
         case 'round': { const p = banner(`Ronda ${o.n}`, o.erupt > 0 ? `🔥 Lava nas casas especiais por mais ${o.erupt} ronda${o.erupt > 1 ? 's' : ''}` : '', o.erupt > 0 ? 'lava' : 'info', 1500); await c3('round', o, 300); await p; return; }
-        case 'prova': if (T3()) T3().orbit(96, 40); cutov(`<div class="pbox"><div class="k">${o.duel ? 'Duelo no telemóvel' : 'Prova da ronda'}</div><h1>${o.k ? MGN[o.k][0] + ' ' : ''}${esc(o.t)}</h1><div class="d">${o.kind === 'tel' ? (o.k ? esc(MGD[o.k](4)) .replace('dos 4 segundos', 'do tempo pedido') : '') + '<br>📱 Peguem nos telemóveis!' : '🤹 Prova da vida real: larguem os telemóveis!'}</div></div>`); await sleep(o.kind === 'tel' ? 4200 : 2400); cutov(null, false); return;
+        case 'prova': if (T3()) T3().orbit(96, 40); cutov(`<div class="pbox"><div class="k">${o.duel ? 'Duelo no telemóvel' : o.mini ? '🤹 Casa de Minijogo' : 'Minijogo da ronda'}</div><h1>${o.k ? MGN[o.k][0] + ' ' : ''}${esc(o.t)}</h1><div class="d">${o.kind === 'tel' ? '📱 Peguem nos telemóveis!' : '🤹 Prova da vida real: larguem os telemóveis!'}</div></div>`); await sleep(2200); cutov(null, false); return;
+        case 'numwheel': {
+          const n = o.n, seg = 360 / n, R = 100, rad = d => (d - 90) * Math.PI / 180, cols = ['#d3263a', '#1b1b22'];
+          const segs = Array.from({ length: n }, (_, k) => { const a0 = rad(k * seg), a1 = rad((k + 1) * seg), mid = (k + .5) * seg - 90; return `<path d="M0 0 L${(Math.cos(a0) * R).toFixed(2)} ${(Math.sin(a0) * R).toFixed(2)} A${R} ${R} 0 0 1 ${(Math.cos(a1) * R).toFixed(2)} ${(Math.sin(a1) * R).toFixed(2)} Z" fill="${cols[k % 2]}" stroke="#f3c545" stroke-width="1.2"/><g transform="rotate(${mid.toFixed(2)})"><text x="76" y="7" font-size="20" font-weight="900" text-anchor="middle" fill="#fff" font-family="Nunito,sans-serif" transform="rotate(90 76 0)">${k + 1}</text></g>`; }).join('');
+          const picks = o.list.map(i => `<span class="pch" style="--c:${D.PCOLORS[S.players[i].col]}">${tok(S.players[i], 's')}${esc(nm(i))} <b>${o.picks[i]}</b></span>`).join('');
+          cutov(`<div class="wheelbox"><div class="k">Cada um escolheu um número</div><h1>🎡 Roleta</h1><div class="wheelwrap" style="width:min(48vh,460px);height:min(48vh,460px)"><div class="wptr">▼</div><svg id="wheelsvg" viewBox="-106 -106 212 212"><circle r="105" fill="#f3c545"/><g>${segs}</g><circle r="22" fill="#0a5a2a" stroke="#f3c545" stroke-width="3"/></svg></div><div class="who" style="margin-top:10px">${picks}</div><div class="wres" id="wres">&nbsp;</div></div>`);
+          const sp = S.opts.speed || 1, dur = 4800 * sp, w = $('#wheelsvg'), rot = 360 * 6 - (o.v - .5) * seg + (Math.random() - .5) * seg * .6;
+          await new Promise(r => setTimeout(r, 350));
+          w.style.transition = `transform ${dur}ms cubic-bezier(.12,.62,.1,1)`; w.style.transform = `rotate(${rot}deg)`;
+          let tk = 0; const tick = () => { if (tk > dur * .92) return; Sound.tick(); const gap = 55 + Math.pow(tk / dur, 2.4) * 420; tk += gap; setTimeout(tick, gap); }; tick();
+          await new Promise(r => setTimeout(r, dur + 250)); Sound.bell(); const wr = $('#wres'); if (wr) { wr.innerHTML = `Saiu o ${o.v}!`; wr.classList.add('show'); }
+          await sleep(2200); cutov(null, false); return;
+        }
+        case 'skullsClosed': { if (T3()) T3().setSkulls(true); await banner('🔒 As Caveiras fecharam-se!', 'Já caíram 2 jogadores. Agora só o rio leva ao vulcão.', 'warn', 3200); return; }
         case 'prizes': {
           cutov(`<div class="pbox"><div class="k">Prémios da prova</div><h1>🎲 Dados desta ronda</h1><div class="ranklist">${S.players.map((p, i) => `<div class="r" style="${o.w.includes(i) ? '' : 'background:#eef6f7'}">${tok(p, 's')}<b>${p.bot ? '🤖 ' : ''}${esc(p.name)}</b><span>${p.dn > 1 ? '🥇 dado de ouro' : p.ds ? '🥈 dado de prata' : p.db ? '🥉 dado de bronze' : 'dado normal'} ${diceIcons(p)}</span></div>`).join('')}</div></div>`);
           await sleep(3400); cutov(null, false); return;
         }
-        case 'rank': cutov(`<div class="pbox"><div class="k">${MGN[o.k][0]} ${MGN[o.k][1]}${o.k === 'stop' ? ` · alvo ${o.target} s` : ''}</div><h1>Classificação</h1><div class="ranklist">${o.rank.map(([i, v], k) => `<div class="r">${tok(S.players[i], 's')}<b>${k + 1}.º ${S.players[i].bot ? '🤖 ' : ''}${esc(nm(i))}</b><span>${mgVal(o, v)} ${k === 0 ? '🥇' : k === 1 && o.rank.length >= 3 ? '🥈' : k === 2 && o.rank.length >= 4 ? '🥉' : ''}</span></div>`).join('')}</div></div>`); await sleep(4600); cutov(null, false); return;
+        case 'rank': cutov(`<div class="pbox"><div class="k">${MGN[o.k][0]} ${MGN[o.k][1]}${o.k === 'stop' ? ` · alvo ${o.target} s` : ''}${o.out ? ` · saiu ${o.out}` : ''}</div><h1>${o.mini ? 'Classificação · 1.º avança 3, 2.º avança 1' : 'Classificação e dados'}</h1><div class="ranklist">${o.rank.map(([i, v], k) => `<div class="r">${tok(S.players[i], 's')}<b>${k + 1}.º ${S.players[i].bot ? '🤖 ' : ''}${esc(nm(i))}</b><span>${mgVal(o, v)} ${k === 0 ? '🥇' : k === 1 && o.rank.length >= 3 ? '🥈' : k === 2 && o.rank.length >= 4 ? '🥉' : ''}</span></div>`).join('')}</div></div>`); await sleep(4600); cutov(null, false); return;
         case 'card': { const c = D.LUCK[o.c], dare = c.a === 'dare'; if (T3()) T3().focus(o.who[0]); cutov(`<div class="cardbig"><div class="e">${dare ? '🎭' : '🃏'}</div><h2>${dare ? 'Prenda!' : esc(c.t)}</h2><p>${esc(dare ? D.DARE[o.di] : c.d)}</p></div>`); await sleep(dare ? 1800 : 3000); cutov(null, false); return; }
         case 'wheel': {
           const n = o.list.length, seg = 360 / n, R = 100, idx = o.list.indexOf(o.v), rad = d => (d - 90) * Math.PI / 180;
@@ -423,8 +442,7 @@
         <div class="addlocal"><input id="lname" maxlength="12" placeholder="Jogador sem telemóvel"><button class="btn sm" id="ladd">+ Jogar neste ecrã</button></div>
         <div class="addlocal"><button class="btn sm sun" id="badd" style="flex:1">🤖 + Adicionar bot</button><button class="btn sm ghost" id="bfill" style="flex:1;color:#fff;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6)">Completar até 4 com bots</button></div>
         <h3>Regras da casa</h3>
-        <label class="opt">Provas <select id="omode"><option value="mix">Vida real + telemóvel</option><option value="real">Só da vida real</option><option value="tel">Só de telemóvel</option></select></label>
-        <label class="opt"><input type="checkbox" id="ocards" checked> Temos um baralho de cartas à mão</label>
+        <label class="opt">Casas de Minijogo e Duelos <select id="omode"><option value="mix">Provas da vida real</option><option value="tel">Minijogos de telemóvel</option></select></label>
         <label class="opt">Duração <select id="olen"><option value="n">Normal (cerca de 80 min)</option><option value="r">Rápida: todos levam +1 dado de bronze (45 min)</option></select></label>
         <label class="opt">Ritmo das animações <select id="ospeed"><option value="1.3">Calmo</option><option value="1" selected>Normal</option><option value="0.7">Rápido</option></select></label>
         <label class="opt">Gráficos <select id="oq"><option value="alta">Alta (sombras, reflexos, brilho)</option><option value="media">Média</option><option value="leve">Leve (ecrãs lentos)</option></select></label>
@@ -436,7 +454,6 @@
       $('#badd').onclick = () => { addBot(); Sound.bell(); structChanged(); };
       $('#bfill').onclick = () => { while (S.players.length < 4) addBot(); Sound.bell(); structChanged(); };
       $('#omode').onchange = e => { S.opts.mode = e.target.value; ENG.push(); };
-      $('#ocards').onchange = e => { S.opts.cards = e.target.checked; ENG.push(); };
       $('#olen').onchange = e => { S.opts.len = e.target.value; ENG.push(); };
       $('#ospeed').value = String(S.opts.speed); $('#ospeed').onchange = e => { S.opts.speed = +e.target.value; LS.set('vulcao-speed', e.target.value); if (T3()) T3().setSpeed(S.opts.speed); };
       $('#oq').value = LS.get('vulcao-q') || 'alta'; $('#oq').onchange = e => { LS.set('vulcao-q', e.target.value); LS.set('vulcao-qauto', '0'); if (T3()) T3().setQuality(e.target.value); };
@@ -450,7 +467,7 @@
     $('#lbplayers').innerHTML = S.players.length ? S.players.map((p, k) => `<div class="lbp"><span ${p.local || p.bot ? `data-ht="${k}" title="Mudar chapéu" style="cursor:pointer"` : ''}>${tok(p)}</span><b>${esc(p.name)}</b><span class="muted">${D.HATS[p.hat][1]} · ${p.bot ? '🤖 bot' : p.local ? '🖥️ neste ecrã' : '📱 ligado'}</span><button class="x" data-rm="${k}">✕</button></div>`).join('') : '<p style="color:#a9cbd3">Ainda ninguém deu à costa.</p>';
     $('#gostart').disabled = S.players.length < 2;
     const h = S.players.filter(p => !p.bot).length;
-    $('#lbhint').textContent = S.players.length < 2 ? 'São precisos pelo menos 2 jogadores (podem ser bots).' : `${S.players.length} jogadores prontos.${h < 2 ? ' Com menos de 2 humanos só há provas de telemóvel.' : ''}`;
+    $('#lbhint').textContent = S.players.length < 2 ? 'São precisos pelo menos 2 jogadores (podem ser bots).' : `${S.players.length} jogadores prontos.${h < 2 ? ' Com menos de 2 humanos, as casas de Minijogo usam minijogos de telemóvel.' : ''}`;
   }
   function tvTop() {
     const T = $('#tvtop'), w = ENG.waiting(), stuck = w && Date.now() - (w.since || 0) > 12000;
@@ -498,7 +515,8 @@
           if (S.step === 'pvrun' && x.s) { const r = remaining(V, x); tm = `<div class="timer ${r < 6000 ? 'low' : ''}">${r > 0 ? Math.ceil(r / 1000) : '⏰'}</div>`; const key = x.id + ':' + x.t0; if (r <= 0 && timeUp !== key) { timeUp = key; Sound.time(); } }
           html = `<div class="pbox"><div class="k">${KIND[x.k]}${x.k === 'gate' ? ' · ' + D.GATE_NAMES[x.gi] : ''}</div><h1>${esc(c.t)}</h1><div class="who">${whoLine(V, x)}</div><div class="d">${esc(c.d)}</div>${tm}<div class="foot">${S.step === 'pv' ? `📱 Qualquer jogador toca em <b>Começar</b>${c.c ? ' · 🃏 precisa de baralho' : ''} · não dá? <b>Outra prova</b>` : '📱 Quando acabar, toquem em <b>Acabou</b> para votar'}</div></div>`; break;
         }
-        case 'vote': html = `<div class="pbox"><div class="k">Votação</div><h1>🗳️ ${x.k === 'gate' ? `${esc(nameOf(V, x.solo))} passou?` : 'Quem ganhou?'}</h1><div class="d">Votem no telemóvel</div>${chips(x.who)}<div class="foot">Ganha a maioria · empate: ${x.k === 'gate' ? 'passa' : 'decide o dado'}</div></div>`; break;
+        case 'vote': html = `<div class="pbox"><div class="k">Votação</div><h1>🗳️ ${x.k === 'gate' ? `${esc(nameOf(V, x.solo))} passou?` : 'Quem ganhou?'}</h1><div class="d">${x.k === 'team' && x.arb >= 0 ? '⚖️ O Árbitro decide sozinho' : x.k === 'team' ? 'Cada equipa vale o mesmo, seja qual for o tamanho' : x.k === '1vN' ? 'Só o grupo vota' : 'Votem no telemóvel'}</div>${chips(x.who)}<div class="foot">Ganha a maioria · empate: ${x.k === 'gate' ? 'passa' : 'decide o dado'}</div></div>`; break;
+        case 'mgintro': html = `<div class="pbox"><div class="k">${x.duel ? 'Duelo no telemóvel' : x.mini ? '🤹 Casa de Minijogo' : 'Minijogo da ronda'}</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k](x.target))}</div><div class="foot" style="margin-bottom:8px">${x.duel ? 'Quem ganhar avança 3, quem perder recua 3' : x.mini ? '1.º avança 3 casas · 2.º avança 1' : '🥇 1.º ouro (1–6) · 🥈 2.º prata (1–4) · 🥉 3.º bronze (1–2) · a classificação decide a ordem'}</div>${chips(x.who)}<div class="foot">📱 Toquem em <b>Percebi</b> no telemóvel para começar</div></div>`; break;
         case 'mgwait': html = `<div class="pbox"><div class="k">⚡ Reflexos</div><div class="mgbig red">ESPERA…</div><div class="foot">Toquem no telemóvel quando ficar verde</div></div>`; break;
         case 'mg': html = x.k === 'reflex' ? `<div class="pbox"><div class="k">⚡ Reflexos</div><div class="mgbig green">TOCA!</div>${chips(x.who)}</div>` : `<div class="pbox"><div class="k">Prova de telemóvel</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k](x.target))}</div>${chips(x.who)}</div>`; break;
         case 'el': html = `<div class="pbox"><div class="k">Prova de telemóvel · ronda ${x.rd}</div><h1>${MGN[x.k][0]} ${MGN[x.k][1]}</h1><div class="d">${esc(MGD[x.k]())}</div><div class="who">${x.act.map(i => `<span class="pch ${x.picks[i] !== undefined || V.players[i].bot ? 'done' : ''}" style="--c:${D.PCOLORS[V.players[i].col]}">${tok(V.players[i], 's')}${esc(nameOf(V, i))}${x.picks[i] !== undefined || V.players[i].bot ? ' ✅' : ''}</span>`).join('')}</div><div class="foot">Escolham no telemóvel, em segredo</div></div>`; break;
@@ -588,7 +606,7 @@
     if (claim !== null) { claim = null; presence(); }
     if (!pad) { $('#padroot').onclick = null; $('#padroot').innerHTML = '<div id="padwrap" style="position:absolute;inset:0"></div>'; pad = makePad($('#padwrap'), { getView: () => padV, me: () => me, send: padSend, local: false }); }
     const was = pad._mine; pad._mine = mustAct(V, me);
-    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'el', 'roll', 'pick', 'dare', 'river'].includes(V.step)) { pad.P.tab = 'play'; } }
+    if (pad._mine && !was) { try { navigator.vibrate && navigator.vibrate(90); } catch (e) { } if (pad.P.tab !== 'play' && ['pv', 'vote', 'mg', 'mgwait', 'mgintro', 'el', 'roll', 'pick', 'dare', 'river'].includes(V.step)) { pad.P.tab = 'play'; } }
     pad.render();
   }
   let lastRecl = '';

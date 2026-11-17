@@ -260,7 +260,10 @@ function buildBoard() {
   st.count = k; st.castShadow = st.receiveShadow = true; scene.add(st);
   T.lavaTop = new THREE.MeshBasicMaterial({ map: iconTex('🔥', '#ff4a12'), toneMapped: false, color: new THREE.Color(2.2, 1.5, 1.2) });
 }
-function setLavaTiles(on) { tiles.forEach(g => { g.userData.top.material = on && D.LAVA_TYPES[g.userData.sp.t] ? T.lavaTop : g.userData.mat; }); }
+let skullsOff = false, lavaOn = false;
+function paintTiles() { tiles.forEach(g => { const t = g.userData.sp.t; g.userData.top.material = lavaOn && D.LAVA_TYPES[t] ? T.lavaTop : (skullsOff && t === 'skull') ? (T.lockTop || (T.lockTop = new THREE.MeshStandardMaterial({ map: iconTex('🔒', '#6b6f78'), roughness: .5 }))) : g.userData.mat; }); }
+function setLavaTiles(on) { lavaOn = !!on; paintTiles(); }
+function setSkulls(on) { if (!!on === skullsOff) return; skullsOff = !!on; paintTiles(); if (on) tiles.forEach(g => { if (g.userData.sp.t === 'skull') particles(scene, { n: 30, life: 1, size: .8, color: '#cfd6de', spawn: () => ({ p: g.position.clone().add(V3(0, .5, 0)), v: V3((srand() - .5) * 3, 2 + srand() * 3, (srand() - .5) * 3) }), g: 4 }); }); }
 
 // ---------- cenário ----------
 function buildGates() {
@@ -654,5 +657,5 @@ async function init(el, o) {
   setInterval(() => { if (performance.now() - lastTick > 240) tick(); }, 120);
   T.ready = true; syncAll();
 }
-Object.assign(T, { init, syncAll, hop, flyTo, focus, cut, rollDice, clearDice, orbit, lookTile, setQuality, setLavaTiles, setMood, sleep, setSpeed: s => { speed = s || 1; }, get quality() { return quality; }, debug: { cam, CUT, THREE, get scene() { return scene; }, get camera() { return camera; }, get bloom() { return bloom; }, get renderer() { return renderer; }, get sky() { return sky; }, snap() { if (cam.mode === 'follow') followPose(cam.who); cam.pos.copy(cam.tp); cam.look.copy(cam.tl); }, get water() { return water; }, fixed, V3 } });
+Object.assign(T, { init, syncAll, hop, flyTo, focus, cut, rollDice, clearDice, orbit, lookTile, setQuality, setLavaTiles, setSkulls, setMood, sleep, setSpeed: s => { speed = s || 1; }, get quality() { return quality; }, debug: { cam, CUT, THREE, get scene() { return scene; }, get camera() { return camera; }, get bloom() { return bloom; }, get renderer() { return renderer; }, get sky() { return sky; }, snap() { if (cam.mode === 'follow') followPose(cam.who); cam.pos.copy(cam.tp); cam.look.copy(cam.tl); }, get water() { return water; }, fixed, V3 } });
 window.TV3D = T;

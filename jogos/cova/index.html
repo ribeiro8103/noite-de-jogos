@@ -2402,20 +2402,34 @@ const UI = (()=>{
       <p class="muted">${claim!==null?'A pedir à TV…':'Só podes retomar o lugar de alguém cujo comando esteja desligado.'}</p></div>`;
     $('#padroot').onclick = e=>{ const b=e.target.closest('.reclaim'); if(!b||b.disabled) return; claim=+b.dataset.k; presence(); renderReclaim(V); };
   }
+  // A TV manda o estado várias vezes por segundo: o formulário só é redesenhado quando algo muda,
+  // e o que estás a escrever (e o símbolo escolhido) fica guardado à parte, para o teclado não fechar.
+  let draft=null, lastJoinHtml='', joinEdit=false;
   function renderJoin(V){
     pad=null;
     const meP = V.players.find(p=>p.cid===cid);
     const taken = V.players.filter(p=>p.cid!==cid).map(p=>p.tok);
-    const nm = join ? join.nm : (LS.get('cova-name')||'');
-    let tk = join ? join.tk : TOKENS.findIndex((_,k)=>!taken.includes(k));
-    $('#padroot').innerHTML = `<div class="join"><div class="logo sm">Cova da Fortuna</div><div class="muted">Sala ${esc(padCode)} · ${V.players.length}/${MAXP} jogadores</div>
-      <label>O teu nome<input id="jname" maxlength="12" value="${esc(nm)}" placeholder="Nome"></label>
-      <div class="toks">${TOKENS.map((t,k)=>`<button class="tokb ${k===tk?'on':''}" data-tk="${k}" ${taken.includes(k)?'disabled':''}><span>${t.e}</span>${t.n}</button>`).join('')}</div>
-      <button class="btn big good" id="jgo">${meP?'Atualizar':'Entrar no jogo'}</button>
-      ${meP?`<div class="card center"><div class="big-tok" style="background:${PCOLORS[meP.col]}">${tokE(meP.tok)}</div><b>Estás dentro!</b><p class="muted">Espera que a TV comece o jogo.</p></div>`:''}
+    if(!draft) draft = { nm: join ? join.nm : (LS.get('cova-name')||''), tk: join ? join.tk : -1 };
+    if(meP && !joinEdit){ draft.nm = meP.name; draft.tk = meP.tok; }
+    if(draft.tk<0 || taken.includes(draft.tk)) draft.tk = TOKENS.findIndex((_,k)=>!taken.includes(k));
+    const editing = !meP || joinEdit;
+    const html = `<div class="join"><div class="logo sm">Cova da Fortuna</div><div class="muted">Sala ${esc(padCode)} · ${V.players.length}/${MAXP} jogadores</div>
+      ${editing ? `<label>O teu nome<input id="jname" maxlength="12" placeholder="Nome" autocomplete="off" autocapitalize="words" enterkeyhint="done"></label>
+      <div class="toks">${TOKENS.map((t,k)=>`<button class="tokb ${k===draft.tk?'on':''}" data-tk="${k}" ${taken.includes(k)?'disabled':''}><span>${t.e}</span>${t.n}</button>`).join('')}</div>
+      <button class="btn big good" id="jgo">${meP?'Guardar':'Entrar no jogo'}</button>`
+      : `<div class="card center"><div class="big-tok" style="background:${PCOLORS[meP.col]}">${tokE(meP.tok)}</div><h3 style="margin:6px 0">${esc(meP.name)}</h3><b>Estás dentro!</b><p class="muted">Espera que a TV comece o jogo.</p><button class="btn ghost" id="jedit">Mudar nome ou símbolo</button></div>`}
       <div class="lbmini">${V.players.map(p=>`<span class="chip"><span class="dot" style="background:${PCOLORS[p.col]}"></span>${tokE(p.tok)} ${esc(p.name)}</span>`).join('')}</div></div>`;
-    $('#padroot .toks').onclick=e=>{ const b=e.target.closest('[data-tk]'); if(!b||b.disabled) return; $('#padroot .toks .on')&&$('#padroot .toks .on').classList.remove('on'); b.classList.add('on'); };
-    $('#jgo').onclick=()=>{ const n=$('#jname').value.trim().slice(0,12)||'Jogador'; const t=+($('#padroot .tokb.on')||{dataset:{tk:0}}).dataset.tk; LS.set('cova-name', n); join={nm:n, tk:t}; presence(); };
+    if(html===lastJoinHtml && $('#padroot .join')) return;
+    const inp0 = $('#jname'), hadFocus = inp0 && document.activeElement===inp0, caret = inp0 ? inp0.selectionStart : null;
+    // enquanto escreves, só a lista de jogadores é atualizada
+    if(hadFocus && editing && $('#padroot .toks')){ const mini=$('#padroot .lbmini'); if(mini) mini.innerHTML = V.players.map(p=>`<span class="chip"><span class="dot" style="background:${PCOLORS[p.col]}"></span>${tokE(p.tok)} ${esc(p.name)}</span>`).join(''); document.querySelectorAll('#padroot .tokb').forEach(b=>{ const k=+b.dataset.tk; b.disabled = taken.includes(k); }); return; }
+    lastJoinHtml = html;
+    $('#padroot').onclick = null; $('#padroot').innerHTML = html;
+    const inp = $('#jname');
+    if(inp){ inp.value = draft.nm; inp.oninput = e=>{ draft.nm = e.target.value; }; inp.onkeydown = e=>{ if(e.key==='Enter'){ e.preventDefault(); inp.blur(); } }; if(hadFocus){ inp.focus(); try{ inp.setSelectionRange(caret,caret); }catch(e){} } }
+    if($('#jedit')) $('#jedit').onclick = ()=>{ joinEdit=true; lastJoinHtml=''; renderJoin(V); };
+    if($('#padroot .toks')) $('#padroot .toks').onclick=e=>{ const b=e.target.closest('[data-tk]'); if(!b||b.disabled) return; draft.tk=+b.dataset.tk; $('#padroot .toks .on')&&$('#padroot .toks .on').classList.remove('on'); b.classList.add('on'); lastJoinHtml=''; };
+    if($('#jgo')) $('#jgo').onclick=()=>{ const n=(draft.nm||'').trim().slice(0,12)||'Jogador'; LS.set('cova-name', n); join={nm:n, tk:draft.tk}; joinEdit=false; lastJoinHtml=''; if(inp) inp.blur(); presence(); $('#jgo').textContent='A entrar…'; };
   }
   return { start, tvHud };
 })();

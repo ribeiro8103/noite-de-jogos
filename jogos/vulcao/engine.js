@@ -4,7 +4,7 @@
   const ENG = { FAST: false, TV: {}, AUTOH: null, onPush: null, snd: () => {} };
   const S = ENG.S = {
     ph: 'lobby', players: [], turn: 0, round: 0, step: 'lobby', x: null, erupt: 0, dice: [], log: [], v: 0, code: '', winner: -1,
-    opts: { speed: 1, mode: 'mix', cards: true, len: 'n' }, deck: [], used: {},
+    opts: { speed: 1, mode: 'mix', cards: false, len: 'n' }, deck: [], used: {},
   };
   let PEND = null, GEN = 0;
   const rnd = n => Math.floor(Math.random() * n);
@@ -81,6 +81,13 @@
     S.dice = out; S.step = 'rolling'; S.x = { who: [pi], why, sum, need: need || 0 }; push();
     ENG.snd('dice');
     await tv('rollDice', pi, out, sum, why, need || 0);
+    const vals = out.map(o => o.v);
+    if ((why === 'move' || why === 'volc') && out.length >= 2 && new Set(vals).size < vals.length) {
+      log(`🎉 ${p.name} fez dobradinha (${vals.join(' e ')}) e lança mais um dado.`);
+      ENG.snd('good'); await banner('🎉 Dobradinha!', `${p.name} tirou dois ${vals.find((v, i) => vals.indexOf(v) !== i)}: lança mais um dado normal`, 'good', 1900);
+      const extra = await askRoll(pi, 'double', { n: 1, s: 0, b: 0 });
+      return sum + extra;
+    }
     return sum;
   }
 
@@ -132,14 +139,15 @@
     if (p.amulet) { p.amulet = 0; log(`🧿 O amuleto de ${p.name} partiu-se e salvou-o do vulcão.`); push(); ENG.snd('good'); await cut('amulet', { pi }); return false; }
     p.fell = p.pos; log(`💀 ${p.name} caiu dentro do vulcão${why ? ' (' + why + ')' : ''}.`);
     ENG.snd('fall'); await cut('fall', { pi });
-    p.zone = 'v'; p.vpos = 0; push();
+    p.zone = 'v'; p.vpos = 0; S.skulls++; push();
     await cut('fallIn', { pi });
+    if (S.skulls >= D.SKULL_MAX && !S.skullOff) { S.skullOff = true; log('🔒 As Caveiras fecharam-se! A partir de agora só o rio leva ao vulcão.'); push(); ENG.snd('gate'); await cut('skullsClosed', {}); }
     return true;
   }
 
   // ---------- provas da vida real ----------
   function pickCh(bank) {
-    const all = D[bank].map((c, i) => Object.assign({ i }, c)).filter(c => !c.c || S.opts.cards);
+    const all = D[bank].map((c, i) => Object.assign({ i }, c)).filter(c => !c.c);
     let used = S.used[bank] || (S.used[bank] = []);
     let free = all.filter(c => !used.includes(c.i));
     if (!free.length) { used.length = 0; free = all; }
@@ -165,8 +173,8 @@
       return ch;
     }
   }
-  async function vote(x, voters, opts) {
-    const votes = {};
+  async function vote(x, voters, opts, votes) {
+    votes = votes || {};
     const tally = () => { const c = {}; Object.values(votes).forEach(v => c[v] = (c[v] || 0) + 1); return c; };
     if (voters.length) {
       await gather('vote', Object.assign({ votes, opts }, x), {
@@ -194,41 +202,74 @@
   // ---------- prova da ronda ----------
   async function roundProva(gen) {
     S.players.forEach(p => { p.dn = 1; p.ds = 0; p.db = 0; });
-    const H = humans();
-    let real = H.length >= 2 && S.opts.mode !== 'tel' && (S.opts.mode === 'real' || Math.random() < 0.7);
-    if (!real) return digital(gen);
-    const kinds = ['all', 'all']; if (H.length >= 3) kinds.push('1vN'); if (H.length >= 4) kinds.push('team');
-    let kind = pick(kinds); if (kind === S.lastKind && kind !== 'all') kind = pick(kinds); S.lastKind = kind;
-    const res = { k: kind, real: 1 };
+    const all = S.players.map((_, i) => i);
+    const r = await phoneRank(all, gen, {}); if (!r || dead(gen)) return;
+    const { k, rank, res } = r;
+    P(rank[0]).dn = 2; if (rank.length >= 3) P(rank[1]).ds = 1; if (rank.length >= 4) P(rank[2]).db = 1;
+    S.first = rank.slice();
+    log(`🥇 ${nm(rank[0])} ganhou a prova ${MGT[k]}${rank.length >= 3 ? ` · 🥈 ${nm(rank[1])}` : ''}${rank.length >= 4 ? ` · 🥉 ${nm(rank[2])}` : ''}.`);
+    S.step = 'mgres'; S.x = { k, target: r.target, rank: rank.map(i => [i, res[i]]), out: r.out, who: [] }; push();
+    ENG.snd('win'); await cut('rank', S.x); await wait(200);
+  }
+  // equipas justas: com número ímpar, um jogador fica de Árbitro e decide sozinho
+  function makeTeams(H) {
+    const sh = shuffle(H); let arb = -1;
+    if (sh.length % 2) { const min = Math.min(...sh.map(i => P(i).arb || 0)); arb = pick(sh.filter(i => (P(i).arb || 0) === min)); P(arb).arb = (P(arb).arb || 0) + 1; sh.splice(sh.indexOf(arb), 1); }
+    const half = sh.length / 2; return { A: sh.slice(0, half), B: sh.slice(half), arb };
+  }
+  async function teamVote(x, H, gen) {
+    if (x.arb >= 0) { const r = await vote(Object.assign({ k: 'team' }, x), [x.arb], [0, 1]); return r.tie ? tieBreak([0, 1]) : r.v; }
+    // cada equipa vale o mesmo: conta a maioria dentro de cada equipa
+    const votes = {}; const r = await vote(Object.assign({ k: 'team' }, x), H, [0, 1], votes);
+    const side = T => { const c = [0, 0]; T.forEach(i => { if (votes[i] !== undefined) c[votes[i]]++; }); return c[0] === c[1] ? -1 : c[0] > c[1] ? 0 : 1; };
+    const a = side(x.A), b = side(x.B);
+    if (a === b && a >= 0) return a;
+    if (a >= 0 && b < 0) return a; if (b >= 0 && a < 0) return b;
+    await banner('As equipas não concordam', 'Cada uma votou em si própria: a roleta decide', 'warn', 2200);
+    return tieBreak([0, 1]);
+  }
+  // casa de minijogo: prova da vida real (ou de telemóvel, se não der)
+  async function miniSpace(pi, gen) {
+    const H = humans(), p = P(pi);
+    if (p.bot || H.length < 2 || S.opts.mode === 'tel') {
+      const all = S.players.map((_, i) => i);
+      const r = await phoneRank(all, gen, { mini: 1 }); if (!r || dead(gen)) return;
+      const w1 = r.rank[0], w2 = r.rank.length >= 3 ? r.rank[1] : -1;
+      S.step = 'mgres'; S.x = { k: r.k, target: r.target, rank: r.rank.map(i => [i, r.res[i]]), out: r.out, mini: 1, who: [] }; push();
+      ENG.snd('win'); await cut('rank', S.x);
+      log(`🤹 Minijogo: ${nm(w1)} avança 3${w2 >= 0 ? `, ${nm(w2)} avança 1` : ''}.`);
+      await moveIsland(w1, 3, true); if (w2 >= 0) await moveIsland(w2, 1, true);
+      return;
+    }
+    const kinds = ['all']; if (H.length >= 3) kinds.push('1vN', '1vN'); if (H.length >= 4) kinds.push('team');
+    let kind = pick(kinds); if (kind === S.lastKind && kinds.length > 1) kind = pick(kinds.filter(x => x !== kind)); S.lastKind = kind;
     if (kind === 'all') {
-      await cut('prova', { kind, t: 'Todos contra todos' });
+      await cut('prova', { kind, t: 'Todos contra todos', mini: 1 });
       await realProva('all', 'ALL', { P: H }, H); if (dead(gen)) return;
       const r = await vote({ k: 'all' }, H, H); const w = r.tie ? await tieBreak(r.tied, true) : r.v;
-      P(w).dn = 2; res.w = [w]; S.first = [w]; log(`🥇 ${nm(w)} ganhou a prova e leva o dado de ouro.`);
+      log(`🤹 ${nm(w)} ganhou o minijogo e avança 3.`); ENG.snd('win'); await banner(`${nm(w)} ganhou!`, 'Avança 3 casas', 'good', 1800);
+      await moveIsland(w, 3, true);
     } else if (kind === '1vN') {
-      const min = Math.min(...H.map(i => P(i).solo)); const solo = pick(H.filter(i => P(i).solo === min)); P(solo).solo++;
-      const rest = H.filter(i => i !== solo);
-      await cut('prova', { kind, t: '1 contra o resto', solo });
-      ENG.snd('storm'); await cut('wheel', { list: H, v: solo, t: '1 contra o resto', sub: 'Quem fica sozinho contra todos?' });
-      await realProva('1vN', 'SOLO', { solo, P: H }, H); if (dead(gen)) return;
-      const r = await vote({ k: '1vN', solo }, H, [1, 0]); const w = r.tie ? await tieBreak([1, 0]) : r.v;
-      if (w === 1) { P(solo).dn = 2; res.w = [solo]; S.first = [solo]; log(`🥇 ${nm(solo)} venceu sozinho e leva o dado de ouro.`); }
-      else { rest.forEach(i => P(i).db = 1); res.w = rest; S.first = rest.slice(); log(`🥉 O grupo venceu ${nm(solo)}: dado de bronze para cada um.`); }
+      const rest = H.filter(i => i !== pi);
+      await cut('prova', { kind, t: `${nm(pi)} contra o resto`, solo: pi, mini: 1 });
+      await realProva('1vN', 'SOLO', { solo: pi, P: H }, H); if (dead(gen)) return;
+      const r = await vote({ k: '1vN', solo: pi }, rest, [1, 0]); const w = r.tie ? 1 : r.v;
+      if (w === 1) { log(`🤹 ${nm(pi)} venceu o grupo sozinho e avança 4.`); ENG.snd('win'); await banner(`${nm(pi)} venceu sozinho!`, 'Avança 4 casas', 'good', 1800); await moveIsland(pi, 4, true); }
+      else { log(`🤹 O grupo venceu ${nm(pi)}: recua 2 e cada um avança 1.`); ENG.snd('bad'); await banner('O grupo venceu!', `${nm(pi)} recua 2 · os outros avançam 1`, 'bad', 2000); await moveIsland(pi, -2, true); for (const i of rest) await moveIsland(i, 1, true); }
     } else {
-      const sh = shuffle(H), half = Math.floor(sh.length / 2); const A = sh.slice(0, half), B = sh.slice(half);
-      await cut('prova', { kind, t: 'Equipas', A, B });
-      await realProva('team', 'TEAM', { A, B }, H); if (dead(gen)) return;
-      const r = await vote({ k: 'team', A, B }, H, [0, 1]); const w = r.tie ? await tieBreak([0, 1]) : r.v;
-      const W = w === 0 ? A : B; W.forEach(i => P(i).ds = 1); res.w = W; S.first = W.slice();
-      log(`🥉 Ganhou a equipa ${w === 0 ? 'A' : 'B'} (${W.map(nm).join(', ')}): dado de prata para cada um.`);
+      const t = makeTeams(H);
+      await cut('prova', { kind, t: 'Equipas', A: t.A, B: t.B, arb: t.arb, mini: 1 });
+      await realProva('team', 'TEAM', { A: t.A, B: t.B, arb: t.arb }, H); if (dead(gen)) return;
+      const w = await teamVote({ A: t.A, B: t.B, arb: t.arb }, H, gen); if (dead(gen)) return;
+      const W = w === 0 ? t.A : t.B;
+      log(`🤹 Ganhou a equipa ${w === 0 ? 'A' : 'B'} (${W.map(nm).join(', ')}): cada um avança 2.`); ENG.snd('win'); await banner(`Ganhou a equipa ${w === 0 ? 'A' : 'B'}!`, 'Cada um avança 2 casas', 'good', 1800);
+      for (const i of W) await moveIsland(i, 2, true);
     }
-    res.bots = [];
-    S.players.forEach((p, i) => { if (p.bot && Math.random() < 0.5) { p.db = 1; res.bots.push(i); } });
-    S.step = 'pvres'; S.x = Object.assign(res, { who: [] }); push();
-    ENG.snd('win'); await cut('prizes', res); await wait(200);
   }
-  const MG = ['stop', 'reflex', 'taps', 'min01', 'ppt', 'parimpar', 'unico'];
-  const MGT = { stop: 'Relógio Cego', reflex: 'Reflexos', taps: 'Martelada', min01: '0 ou 1', ppt: 'Pedra, Papel, Tesoura', parimpar: 'Par ou Ímpar', unico: 'Número Único' };
+  const MG = ['reflex', 'parimpar', 'roleta', 'soma', 'unico', 'stop', 'taps', 'min01', 'ppt'];
+  const MGT = { stop: 'Relógio Cego', reflex: 'Reflexos', taps: 'Martelada', min01: '0 ou 1', ppt: 'Pedra, Papel, Tesoura', parimpar: 'Par ou Ímpar', unico: 'Número Único', roleta: 'Roleta', soma: 'Adivinha a Soma' };
+  const NUMLIM = { unico: [1, 9], roleta: [1, 12], soma: [3, 18] };
+  ENG.MGT = MGT; ENG.NUMLIM = NUMLIM;
   const ELOPT = { min01: [0, 1], ppt: [0, 1, 2], parimpar: [0, 1] };
   // provas por eliminação: devolve a classificação (melhor primeiro)
   async function elimGame(k, list, gen) {
@@ -254,45 +295,53 @@
     }
     return act.concat(out.reverse());
   }
-  async function digital(gen) {
-    const H = humans(), all = S.players.map((_, i) => i);
-    let k = pick(MG); if (k === S.lastMg || (S.mgSeen || []).includes(k)) k = pick(MG.filter(x => !(S.mgSeen || []).includes(x)).concat(MG.filter(x => x !== S.lastMg)));
-    S.lastMg = k; S.mgSeen = (S.mgSeen || []).concat(k).slice(-4);
+  async function phoneRank(list, gen, o) {
+    const H = list.filter(i => !P(i).bot);
+    const seen = S.mgSeen || [];
+    let k = pick(MG.filter(x => x !== S.lastMg && !seen.includes(x))); if (!k) k = pick(MG.filter(x => x !== S.lastMg));
+    S.lastMg = k; S.mgSeen = seen.concat(k).slice(-5);
     const res = {}; const target = k === 'stop' ? 4 + rnd(5) : 0;
     const base = { k, target, res };
-    await cut('prova', { kind: 'tel', t: MGT[k], k });
-    if (dead(gen)) return;
-    let rank;
-    if (ELOPT[k]) { rank = await elimGame(k, all, gen); if (dead(gen)) return; rank.forEach(i => res[i] = null); }
+    await cut('prova', { kind: 'tel', t: MGT[k], k, target, mini: o.mini });
+    if (dead(gen)) return null;
+    // explicação: cada um confirma que percebeu antes de começar
+    if (H.length) {
+      const rd = {};
+      await gather('mgintro', { k, target, rd, mini: o.mini }, { who: H, ms: 120000, dflt: () => 1, on: (pi, c) => { if (c.a !== 'ok' || rd[pi]) return; rd[pi] = 1; ENG.snd('tick'); if (H.every(i => rd[i])) return 1; } });
+      if (dead(gen)) return null;
+    }
+    let rank, out = null;
+    if (ELOPT[k]) { rank = await elimGame(k, list, gen); if (dead(gen)) return null; rank.forEach(i => res[i] = null); }
     else {
       if (H.length) {
         ENG.snd('prova');
         const allIn = () => H.every(i => res[i] !== undefined) ? 1 : undefined;
         if (k === 'reflex') {
           await gather('mgwait', base, { who: H, ms: 2600 + rnd(3600), dflt: () => 1, on: (pi, c) => { if (c.a === 'mg' && res[pi] === undefined) { res[pi] = 9999; return allIn(); } } });
-          if (dead(gen)) return;
+          if (dead(gen)) return null;
           ENG.snd('go');
           if (!allIn()) await gather('mg', base, { who: H, ms: 5000, dflt: () => 1, on: (pi, c) => { if (c.a === 'mg' && res[pi] === undefined && typeof c.v === 'number') { res[pi] = Math.max(60, Math.min(5000, Math.round(c.v))); return allIn(); } } });
         } else {
-          const lim = k === 'unico' ? [1, 9] : [0, 60000];
-          await gather('mg', base, { who: H, ms: k === 'unico' ? 30000 : 45000, dflt: () => 1, on: (pi, c) => { if (c.a === 'mg' && res[pi] === undefined && typeof c.v === 'number') { res[pi] = Math.max(lim[0], Math.min(lim[1], Math.round(c.v))); return allIn(); } } });
+          const lim = NUMLIM[k] || [0, 60000];
+          await gather('mg', base, { who: H, ms: NUMLIM[k] ? 30000 : 45000, dflt: () => 1, on: (pi, c) => { if (c.a === 'mg' && res[pi] === undefined && typeof c.v === 'number') { res[pi] = Math.max(lim[0], Math.min(lim[1], Math.round(c.v))); return allIn(); } } });
         }
-        if (dead(gen)) return;
+        if (dead(gen)) return null;
       }
-      const worst = k === 'taps' ? 0 : k === 'unico' ? 1 + rnd(9) : 99999;
-      S.players.forEach((p, i) => {
-        if (p.bot) res[i] = k === 'stop' ? Math.round(target * 1000 + (Math.random() < .5 ? -1 : 1) * (150 + rnd(1300))) : k === 'reflex' ? 240 + rnd(380) : k === 'unico' ? 1 + rnd(9) : 22 + rnd(26);
-        else if (res[i] === undefined) res[i] = worst;
+      const lim = NUMLIM[k];
+      list.forEach(i => {
+        const p = P(i);
+        if (p.bot) res[i] = k === 'stop' ? Math.round(target * 1000 + (Math.random() < .5 ? -1 : 1) * (150 + rnd(1300))) : k === 'reflex' ? 240 + rnd(380) : k === 'taps' ? 22 + rnd(26) : k === 'soma' ? 7 + rnd(8) : lim[0] + rnd(lim[1] - lim[0] + 1);
+        else if (res[i] === undefined) res[i] = k === 'taps' ? 0 : lim ? lim[0] + rnd(lim[1] - lim[0] + 1) : 99999;
       });
-      const cnt = v => all.filter(i => res[i] === v).length;
-      const score = i => k === 'stop' ? Math.abs(res[i] - target * 1000) : k === 'reflex' ? res[i] : k === 'unico' ? (cnt(res[i]) === 1 ? -100 - res[i] : -res[i]) : -res[i];
-      rank = shuffle(all).sort((a, b) => score(a) - score(b));
+      // sorteio do resultado nas provas de número
+      if (k === 'roleta') { out = 1 + rnd(12); S.step = 'busy'; S.x = { k, res, who: [] }; push(); ENG.snd('storm'); await cut('numwheel', { v: out, n: 12, picks: res, list }); }
+      if (k === 'soma') { const d = [{ t: 'n', v: r6() }, { t: 'n', v: r6() }, { t: 'n', v: r6() }]; out = d[0].v + d[1].v + d[2].v; S.dice = d; S.step = 'rolling'; S.x = { who: [], why: 'soma', sum: out, need: 0 }; push(); ENG.snd('dice'); await tv('rollDice', -1, d, out, 'soma', 0); }
+      const cnt = v => list.filter(i => res[i] === v).length;
+      const cdist = (a, b) => { const d = Math.abs(a - b) % 12; return Math.min(d, 12 - d); };
+      const score = i => k === 'stop' ? Math.abs(res[i] - target * 1000) : k === 'reflex' ? res[i] : k === 'unico' ? (cnt(res[i]) === 1 ? -100 - res[i] : -res[i]) : k === 'roleta' ? cdist(res[i], out) : k === 'soma' ? Math.abs(res[i] - out) : -res[i];
+      rank = shuffle(list.slice()).sort((a, b) => score(a) - score(b));
     }
-    P(rank[0]).dn = 2; if (rank.length >= 3) P(rank[1]).ds = 1; if (rank.length >= 4) P(rank[2]).db = 1;
-    S.first = rank.slice();
-    log(`🥇 ${nm(rank[0])} ganhou a prova ${MGT[k]}${rank.length >= 3 ? ` · 🥈 ${nm(rank[1])}` : ''}${rank.length >= 4 ? ` · 🥉 ${nm(rank[2])}` : ''}.`);
-    S.step = 'mgres'; S.x = { k, target, rank: rank.map(i => [i, res[i]]), who: [] }; push();
-    ENG.snd('win'); await cut('rank', S.x); await wait(200);
+    return { k, rank, res, target, out };
   }
 
   // ---------- casas ----------
@@ -316,6 +365,7 @@
     } else {
       const k = pick(['ppt', 'parimpar']);
       await cut('prova', { kind: 'tel', t: MGT[k], k, duel: 1 });
+      { const H2 = [pi, t].filter(i => !P(i).bot); if (H2.length) { const rd = {}; await gather('mgintro', { k, rd, duel: 1 }, { who: H2, ms: 120000, dflt: () => 1, on: (q, c) => { if (c.a !== 'ok' || rd[q]) return; rd[q] = 1; if (H2.every(i => rd[i])) return 1; } }); if (dead(gen)) return; } }
       const r = await elimGame(k, [pi, t], gen); if (dead(gen)) return;
       w = r[0];
     }
@@ -381,7 +431,7 @@
   async function land(pi, gen, depth) {
     const p = P(pi); if (p.zone !== 'i') return;
     const sp = D.ISLAND[p.pos], t = sp.t;
-    if (t === 'n' || t === 'start' || t === 'gate' || t === 'goal') return;
+    if (t === 'n' || t === 'start' || t === 'gate' || t === 'goal' || t === 'river') return;
     if (S.erupt > 0 && D.LAVA_TYPES[t]) {
       log(`🔥 ${p.name} parou numa casa de lava e recua 4.`); ENG.snd('bad');
       await cut('lava', { pi }); await moveIsland(pi, -4, true); return;
@@ -404,10 +454,11 @@
       }
       case 'luck': await luck(pi, gen); break;
       case 'duel': await duel(pi, gen); break;
+      case 'mini': await miniSpace(pi, gen); break;
       case 'storm': await storm(pi); break;
       case 'swap': await swap(pi, gen); break;
       case 'volc': S.erupt = 3; log(`🌋 ${p.name} acordou o vulcão! Lava durante 3 rondas.`); push(); ENG.snd('erupt'); await cut('erupt', { pi }); break;
-      case 'skull': await fall(pi); break;
+      case 'skull': if (S.skullOff) { await banner('🔒 Caveira fechada', 'Já não engole ninguém. Só o rio leva ao vulcão.', 'info', 1600); break; } await fall(pi); break;
     }
   }
   async function gateStop(pi) { const p = P(pi); ENG.snd('gate'); await banner('🗿 ' + D.GATE_NAMES[p.gates], 'Paragem obrigatória. Desafio na próxima vez.', 'warn', 2000); log(`🗿 ${p.name} chegou ao ${D.GATE_NAMES[p.gates]}.`); }
@@ -491,7 +542,7 @@
     if (S.players.length < 2) return false;
     GEN++; PEND = null;
     S.players.forEach(p => Object.assign(p, { pos: 0, zone: 'i', vpos: 0, fell: 0, gates: 0, amulet: 0, extra: 0, dn: 1, ds: 0, db: 0, tries: 0, solo: 0, river: 0 }));
-    Object.assign(S, { ph: 'play', round: 0, turn: 0, erupt: 0, winner: -1, log: [], deck: [], used: {}, dice: [], step: 'busy', x: null });
+    Object.assign(S, { skulls: 0, skullOff: false, ph: 'play', round: 0, turn: 0, erupt: 0, winner: -1, log: [], deck: [], used: {}, dice: [], step: 'busy', x: null });
     log('🏝️ Começou a subida ao vulcão. Boa sorte!'); push();
     tv('syncAll');
     gameLoop(GEN);
@@ -511,7 +562,7 @@
     const st = {
       v: S.v, ph: S.ph, c: S.code, t: S.turn, r: S.round, s: S.step, x: S.x, e: S.erupt, d: S.dice.map(o => o.t + o.v).join(''), w: S.winner, now: Date.now(),
       P: S.players.map(p => [p.name, p.col, p.hat, p.pos, p.zone === 'v' ? 1 : 0, p.vpos, p.cid, p.local ? 1 : 0, p.bot ? 1 : 0, p.dn, p.db, p.gates, p.amulet, p.extra, p.tries, p.fell, p.ds, p.river]),
-      o: [S.opts.mode, S.opts.cards ? 1 : 0, S.opts.len], L: S.log.slice(-4), k: acks || {},
+      o: [S.opts.mode, S.opts.cards ? 1 : 0, S.opts.len], sk: [S.skulls || 0, S.skullOff ? 1 : 0], L: S.log.slice(-4), k: acks || {},
     };
     return st;
   }
@@ -520,7 +571,7 @@
       v: st.v, ph: st.ph, code: st.c, turn: st.t, round: st.r, step: st.s, x: st.x, erupt: st.e, winner: st.w, now: st.now, at: Date.now(),
       dice: (st.d.match(/[ngsb]\d/g) || []).map(s => ({ t: s[0], v: +s[1] })),
       players: st.P.map(a => ({ name: a[0], col: a[1], hat: a[2], pos: a[3], zone: a[4] ? 'v' : 'i', vpos: a[5], cid: a[6], local: !!a[7], bot: !!a[8], dn: a[9], db: a[10], gates: a[11], amulet: a[12], extra: a[13], tries: a[14], fell: a[15], ds: a[16], river: a[17] })),
-      opts: { mode: st.o[0], cards: !!st.o[1], len: st.o[2] }, log: st.L || [], acks: st.k || {},
+      opts: { mode: st.o[0], cards: !!st.o[1], len: st.o[2] }, skulls: st.sk ? st.sk[0] : 0, skullOff: !!(st.sk && st.sk[1]), log: st.L || [], acks: st.k || {},
     };
   }
 

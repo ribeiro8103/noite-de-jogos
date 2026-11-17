@@ -242,6 +242,11 @@ input,textarea{font:inherit}
 .mini{font-size:.8em}
 .sep{height:1px;background:var(--line);margin:.2em 0}
 .lawbox{font-family:var(--serif);font-style:italic;color:var(--gold2);text-align:center}
+.betq{font-family:var(--serif);font-size:1.15em;line-height:1.3;color:var(--gold2);margin:.3em 0 .4em}
+.betout{margin:.6em 0;padding:.6em .8em;border-radius:12px;background:rgba(0,0,0,.25);display:flex;flex-direction:column;gap:.25em;font-size:.95em}
+.good{color:#6fdc98}.bad{color:#ff8a86}
+.readbar{display:flex;flex-direction:column;align-items:center;gap:.4em;margin-top:.6em}
+.tbl{width:100%;max-width:44em;border-collapse:separate;border-spacing:0 .35em;font-size:1.25em}.tbl td{padding:.45em .7em;background:rgba(255,255,255,.05)}.tbl td:first-child{border-radius:12px 0 0 12px;width:3em;text-align:center;font-family:var(--serif);color:var(--gold2)}.tbl td:last-child{border-radius:0 12px 12px 0;text-align:right}.tbl tr.lead1 td{background:rgba(216,178,90,.18)}
 .pl-row{display:flex;align-items:center;gap:.6em;padding:.55em .2em;border-bottom:1px solid rgba(216,178,90,.12)}
 .pl-row .av{font-size:1.5em}
 .pl-row .n{flex:1;min-width:0}
@@ -578,6 +583,7 @@ E.betRange = betRange;
 const alvoOf = S => (S.cro - 1 + NP(S)) % NP(S);
 
 function nextRound(S){
+  S.r0 = S.players.map(p=>p.f-p.debt);
   S.rnd++;
   if(S.rnd > S.nR){ startFinal(S); return; }
   // Segunda Oportunidade ao mais pobre no início da Escalada
@@ -669,14 +675,19 @@ function finish(S, W, winIds, opt){
 function endRound(S){
   S.cro = (S.cro + 1) % NP(S);
   if(S.ph==='final'){ endGame(S); return; }
-  nextRound(S);
+  // classificação no fim de cada ronda (com a variação desde o início da ronda)
+  const tot = S.players.map(p=>p.f-p.debt), r0 = S.r0 || tot;
+  const prevOrder = range(NP(S)).sort((a,b)=>(r0[b]??0)-(r0[a]??0));
+  const order = range(NP(S)).sort((a,b)=>tot[b]-tot[a]);
+  S.pv = { type:'table', step:'table', rnd:S.rnd, last: S.rnd>=S.nR, tb: order.map(k=>[k, tot[k], tot[k]-(r0[k]??tot[k]), prevOrder.indexOf(k)]), dl: NOW()+36e5 };
 }
 
 // ---------- avançar (input completo, prazo ou "avançar") ----------
 function advance(S){
   const pv = S.pv; if(!pv) return;
   const n = NP(S), all = range(n);
-  if(pv.type==='intro'){ nextRound(S); return; }
+  if(pv.type==='intro'){ if(pv.step==='intro'){ pv.step = 'kview'; return; } nextRound(S); return; }
+  if(pv.type==='table'){ nextRound(S); return; }
   if(pv.step==='spin'){ if(!pv.res){ spin(S); return; } startType(S, pv.res); return; }
   if(pv.step==='result' || pv.step==='event'){ endRound(S); return; }
   if(pv.step==='bet'){ closeBet(S); return; }
@@ -997,6 +1008,8 @@ E.cmd = (S, k, c) => {
   if(a==='start' && host && S.ph==='lobby' && NP(S)>=3){ E.start(S, c.opts||{}); return; }
   if(a==='endNow' && host && S.ph==='play'){ S.nR = Math.max(1, S.rnd); toast(S, 'Esta é a última ronda antes da Grande Final.', 'warn'); return; }
   if(!pv) return;
+  // —— li / percebi ——
+  if(a==='read'){ ensureRead(S); if(!pv.rq || pv.rqs!==pv.step) return; const R = readers(S); if(!R.includes(k)) return; pv.rq[k] = 1; if(R.every(i=>pv.rq[i])) advance(S); return; }
   // —— avançar ——
   if(a==='go'){
     if(!(host || k===S.cro || (pv.step==='words' && pv.order && pv.order[pv.wi % pv.order.length]===k) || (pv.step==='tell' && k===pv.alvo) || (pv.step==='speech' && ((pv.sp===0&&k===pv.proc)||(pv.sp===1&&k===pv.alvo))) || (pv.step==='def' && pv.el && pv.el.includes(k)))) return;
@@ -1072,7 +1085,14 @@ function resolveChk(S, force){
 }
 
 // ---------- relógio ----------
+// passos de informação: em vez de um temporizador, esperam que todos toquem em "Li"
+const READ = { intro:1, kview:1, card:1, deal:1, result:1, event:1, table:1, secret:1 };
+E.READ = READ;
+function readers(S){ const pv = S.pv; if(!pv) return []; if(pv.step==='secret') return others(S, pv.alvo); return range(NP(S)); }
+E.readers = readers;
+function ensureRead(S){ const pv = S.pv; if(!pv || !READ[pv.step]) return; if(pv.rqs!==pv.step){ pv.rqs = pv.step; pv.rq = {}; pv.dl = NOW() + 36e5; } }
 E.tick = S => {
+  ensureRead(S);
   if(S.chk && S.chk.dl && NOW()>=S.chk.dl) resolveChk(S);
   if(S.accFx && NOW()-S.accFx.at > T.accFx) S.accFx = null;
   const pv = S.pv;
@@ -1087,6 +1107,7 @@ E.need = (S, k) => {
   const s = pv.step, t = pv.type;
   if(S.ph==='end') return S.rank && S.rank[0]===k && !S.newLaw ? { kind:'law' } : null;
   if(s==='spin') return k===S.cro && !pv.res ? { kind:'spin' } : null;
+  if(READ[s]){ if(!readers(S).includes(k) || (pv.rq && pv.rq[k])) return null; if(s==='secret' && k===pv.judge) return { kind:'custom', read:1 }; return { kind:'read', s }; }
   if(s==='bet') return pv.bets[k] ? null : { kind:'bet', only: allowedOpts(S,k), ...betRange(S,k) };
   if(s==='ans') return pv.ans[k]!=null ? null : { kind:'ans', num:pv.num, alvo:k===pv.alvo };
   if(s==='judge') return k===pv.alvo ? { kind:'judge' } : null;
@@ -1110,7 +1131,6 @@ E.need = (S, k) => {
     if(t==='qf') return k===pv.alvo ? null : (k===pv.judge ? { kind:'qfjudge' } : { kind:'hot' });
     if(t==='duelo' || pv.cid==='dupla') return k===S.cro ? { kind:'go', l:'O duelo terminou' } : null;
   }
-  if(s==='secret') return k===pv.judge ? { kind:'custom' } : null;
   if(s==='speech'){ const sp = pv.sp===0 ? pv.proc : pv.alvo; return (k===sp||k===S.cro) ? { kind:'go', l:'Terminei' } : null; }
   if(s==='def') return (pv.el.includes(k)||k===S.cro) ? { kind:'go', l:'Defesa terminada' } : null;
   if(s==='swap') return { kind:'swap' };
@@ -1118,7 +1138,6 @@ E.need = (S, k) => {
   if(s==='law') return k===S.cro ? { kind:'mlaw' } : null;
   if(s==='blind') return pv.bl[k]!=null ? null : { kind:'blind' };
   if(s==='jack') return pv.jn[k]!=null ? null : { kind:'jack' };
-  if(s==='intro' || s==='card' || s==='deal' || s==='result' || s==='event') return k===S.cro ? { kind:'go', l: s==='result'||s==='event' ? 'Próxima ronda' : 'Continuar' } : null;
   return null;
 };
 
@@ -1240,7 +1259,22 @@ const pick = a => a[Math.random()*a.length|0];
 const fmtT = s => s>=60 ? `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}` : String(s);
 function qtext(q, name){ return q.replace(/\bdo Alvo\b/g,'de '+name).replace(/\bao Alvo\b/g,'a '+name).replace(/\bo Alvo\b/g,name).replace(/\bAlvo\b/g,name); }
 const ringSvg = '<svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="4"/><circle class="rg" cx="18" cy="18" r="15" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="0" transform="rotate(-90 18 18)"/></svg>';
-const timerH = (dl, cls='') => `<span class="timer ${cls}" data-dl="${dl}" data-t0="${Date.now()}">${ringSvg}<span class="tv"></span></span>`;
+// sem relógio quando o passo espera que todos toquem em "Li"
+// em que se está a apostar, explicado (TV e telemóvel)
+function betQ(pv, N){
+  const t = pv.type;
+  if(t==='final') return 'Quem vai ganhar O Interrogatório (mais acertos nas 5 perguntas)?';
+  if(t==='qcq') return `Quem vai acertar na resposta de ${N(pv.alvo)}? Se ninguém acertar, ganha ${N(pv.alvo)}.`;
+  if(t==='ment' && pv.sub==='2v') return `${N(pv.alvo)} vai enganar a mesa com a mentira, ou a mesa vai descobri-la?`;
+  if(t==='ment') return 'Quem é o Impostor (a pessoa que não sabe a palavra secreta)?';
+  if((t==='duelo' || pv.cid==='dupla') && pv.duo) return `Quem vai ganhar o duelo: ${N(pv.duo[0])} ou ${N(pv.duo[1])}?`;
+  if(t==='voto') return `Quem vai ser o mais votado em “quem é mais provável de ${D.votes[pv.q]}”?`;
+  if(t==='qf') return `${N(pv.alvo)} vai conseguir cumprir a missão secreta a tempo?`;
+  if(t==='leilao' && pv.hk>=0) return `${N(pv.hk)} vai conseguir dizer ${pv.hi} respostas em 30 segundos?`;
+  if(pv.cid==='trib') return `${N(pv.alvo)} vai ser declarado culpado ou inocente?`;
+  return 'Quem vai ganhar esta prova?';
+}
+const timerH = (dl, cls='') => (dl - Date.now() > 18e5) ? '' : `<span class="timer ${cls}" data-dl="${dl}" data-t0="${Date.now()}">${ringSvg}<span class="tv"></span></span>`;
 
 // ======================= SOM =======================
 const Sound = (()=>{
@@ -1426,12 +1460,15 @@ function makePad(root, api){
       case 'bet': {
         if(betSel && !n.only.includes(betSel)) betSel=null;
         if(betAmt==null || betAmt<n.min || betAmt>n.max) betAmt = n.min;
-        return `<div class="pcard">${ctx}<h3>💰 Faz a tua aposta</h3>
-          <div class="muted mini">Certo: recebes o dobro. Se fores o único a acertar: o triplo (Golpe do Azarão).${pub.fl && pub.fl.infl===pub.rnd ? ' <b class="gold">Inflação: tudo a dobrar!</b>':''}</div>
+        const infl = pub.fl && pub.fl.infl===pub.rnd && pub.ph!=='final' ? 2 : 1;
+        return `<div class="pcard"><h3>💰 Aposta</h3>
+          <div class="betq">🎯 ${esc(betQ(pv, k=>pl[k]?pl[k].n:'?'))}</div>
+          <div class="muted mini">Escolhe a resposta em que acreditas e quantas fichas arriscas. Primeiro aposta-se, depois joga-se a prova; no fim vês se acertaste.</div>
           <div class="pgrid">${n.only.map(id=>`<button class="pbtn ${betSel===id?'on':''}" data-act="betsel" data-id="${id}">${optLabel(pub,id)}</button>`).join('')}</div>
           <div class="stepper"><button data-act="amt" data-d="-1">−</button><span class="val">${betAmt}</span><button data-act="amt" data-d="1">+</button></div>
           <div class="quick"><button data-act="amtset" data-v="${n.min}">mín. ${n.min}</button><button data-act="amtset" data-v="${Math.round((n.min+n.max)/2)}">metade</button><button data-act="amtset" data-v="${n.max}">${pub.ph==='final'?'TUDO':'máx.'} ${n.max}</button></div>
-          <button class="btn big" data-act="bet" ${betSel?'':'disabled'}>Apostar ${betAmt} ficha${betAmt>1?'s':''}</button>${pTimer(pv)}</div>`;
+          <div class="betout"><div>✅ Se acertares: <b class="good">+${betAmt*infl}</b> fichas <span class="muted">(recebes ${betAmt*(1+infl)})</span></div><div>🎯 Se fores o único a acertar: <b class="good">+${betAmt*2*infl}</b></div><div>❌ Se errares: <b class="bad">−${betAmt*infl}</b> fichas</div>${infl>1?'<div class="gold">💸 Inflação: ganhos e perdas a dobrar</div>':''}</div>
+          <button class="btn big" data-act="bet" ${betSel?'':'disabled'}>Apostar ${betAmt} ficha${betAmt>1?'s':''}${betSel?' em '+optLabel(pub,betSel).replace(/<[^>]+>/g,''):''}</button>${pTimer(pv)}</div>`;
       }
       case 'ans': { const q = qtext(D.qcq[pv.q][0], name(pv.alvo));
         return `<div class="pcard"><h3>${n.alvo ? '🎯 A pergunta é sobre ti' : '🔍 Quem conhece quem?'}</h3><div class="q">${esc(q)}</div>
@@ -1448,6 +1485,21 @@ function makePad(root, api){
           <div class="muted mini">Pensa em 3 histórias sobre este tema: 2 verdadeiras e 1 inventada. Qual delas vai ser a mentira?</div>
           <div class="pgrid" style="grid-template-columns:1fr 1fr 1fr">${[1,2,3].map(i=>`<button class="pbtn" style="font-size:1.8em" data-act="lie" data-i="${i}">${i}</button>`).join('')}</div>${pTimer(pv)}</div>`;
       case 'go': return `<div class="pcard" style="text-align:center">${ctx}<button class="btn huge" data-act="go">${esc(n.l)}</button>${pTimer(pv)}</div>`;
+      case 'read': {
+        const R = (pv.rq ? Object.keys(pv.rq).length : 0), tot = pv.step==='secret' ? pl.length-1 : pl.length;
+        const prog = `<div class="muted mini" style="text-align:center">${R} de ${tot} já confirmaram</div>`;
+        const btn = l => `<button class="btn huge" data-act="read">✅ ${l}</button>${prog}`;
+        if(n.s==='kview') return `<div class="pcard role"><h3 style="text-align:center">📜 Os teus contratos secretos</h3>${pr.k.map(c=>{ const info=E.kInfoPub(pub,c); return `<div class="kc"><div class="kt">${esc(info.t)}</div><div class="kv"><span>🪙 vale ${info.v} fichas</span></div></div>`; }).join('')}
+          <div class="muted mini">Cumpre-os durante a noite, sem ninguém perceber. Quando conseguires, vai ao separador 📜 e carrega em “Cumpri!”: a mesa confirma e recebes as fichas. Se alguém desconfiar, pode acusar-te e roubar-te o contrato.</div>${btn('Li os meus contratos')}</div>`;
+        if(n.s==='intro' && pv.type==='intro') return `<div class="pcard" style="text-align:center"><h3>🎩 Bem-vindo ao Clube</h3><div class="muted">Lê as regras na TV: roleta, apostas, prova e contratos secretos.</div>${btn('Li as regras')}</div>`;
+        if(n.s==='intro') return `<div class="pcard" style="text-align:center"><h3>${pv.type==='caos'?'🌀 '+esc(D.chaos[pv.card][1]):pv.type==='final'?'🏁 Grande Final':esc(D.TYPES[pv.type].ic+' '+D.TYPES[pv.type].n)}</h3>${ctx}<div class="muted">Lê na TV como se joga esta prova.</div>${btn('Percebi a prova')}</div>`;
+        if(n.s==='table'){ const pos = (pv.tb||[]).findIndex(r=>r[0]===me), r = (pv.tb||[])[pos]||[me,0,0]; return `<div class="pcard" style="text-align:center"><h3>📊 Fim da ronda ${pv.rnd}</h3><div class="q">Estás em ${pos+1}.º lugar</div><div class="muted">${r[1]} fichas · nesta ronda: <b class="${r[2]>0?'good':r[2]<0?'bad':''}">${r[2]>0?'+':''}${r[2]}</b></div>${btn(pv.last?'Vamos à Grande Final':'Próxima ronda')}</div>`; }
+        if(n.s==='result'){ const b = pv.bets && pv.bets[me], g = pv.betRes ? pv.betRes[me] : null; return `<div class="pcard" style="text-align:center"><h3>🏆 Resultado na TV</h3>${b?`<div class="muted">A tua aposta: ${b[1]} ficha${b[1]>1?'s':''} em ${optLabel(pub,b[0])}</div><div class="q ${g>0?'good':g<0?'bad':''}">${g>0?'Acertaste! +'+g:g<0?'Erraste: '+g:'Sem ganhos'}${g!=null?' fichas':''}</div>`:''}${btn('Visto')}</div>`; }
+        if(n.s==='deal') return `<div class="pcard" style="text-align:center">${btn('Já vi o meu papel')}</div>`;
+        if(n.s==='secret') return `<div class="pcard" style="text-align:center">${btn('Li a missão')}</div>`;
+        if(n.s==='card') return `<div class="pcard" style="text-align:center">${ctx}<div class="muted">Lê a carta do duelo na TV.</div>${btn('Li a carta')}</div>`;
+        return `<div class="pcard" style="text-align:center">${ctx}<div class="muted">Vejam a TV.</div>${btn('Visto')}</div>`;
+      }
       case 'vote3': return `<div class="pcard" style="text-align:center"><h3>Qual é a mentira?</h3><div class="muted">${name(pv.alvo)} contou 3 histórias. Uma é inventada.</div>
           <div class="pgrid" style="grid-template-columns:1fr 1fr 1fr">${[1,2,3].map(i=>`<button class="pbtn" style="font-size:2em;min-height:2.4em" data-act="vote" data-v="${i}">${i}</button>`).join('')}</div>${pTimer(pv)}</div>`;
       case 'voteP': return `<div class="pcard">${ctx}<h3>${esc(n.l)}</h3><div class="pgrid">${n.opts.map(k=>`<button class="pbtn" data-act="vote" data-v="${k}"><span class="av">${pl[k].av}</span>${esc(pl[k].n)}</button>`).join('')}</div>${pTimer(pv)}</div>`;
@@ -1472,7 +1524,7 @@ function makePad(root, api){
           <button class="btn huge green" data-act="qfok">✅ Conseguiu!</button>
           <div class="hotbtns"><button class="hot" data-act="hot" data-v="1" style="height:5em">🔥 QUENTE</button><button class="cold" data-act="hot" data-v="0" style="height:5em">❄️ FRIO</button></div>${pTimer(pv)}</div>`;
       case 'custom': return `<div class="pcard"><h3>Juiz da missão</h3><div class="muted mini">Esta é a missão sorteada. Se tiveres uma ideia melhor (e possível de fazer nesta casa), escreve outra.</div>
-          <input class="inp" data-keep="cust" id="custI" maxlength="90" placeholder="Ex.: pôr a sapatilha no lava-loiça" autocomplete="off"><button class="btn ghost" data-act="custom">Usar a minha missão</button><button class="btn big" data-act="go">Está bom, começar</button>${pTimer(pv)}</div>`;
+          <input class="inp" data-keep="cust" id="custI" maxlength="90" placeholder="Ex.: pôr a sapatilha no lava-loiça" autocomplete="off"><button class="btn ghost" data-act="custom">Usar a minha missão</button><button class="btn big" data-act="read">✅ Está bom, li a missão</button>${pTimer(pv)}</div>`;
       case 'swap': return `<div class="pcard"><h3>Amnistia</h3><div class="muted mini">Toca num contrato para o trocar por um novo (uma vez cada).</div>
           ${pr.k.map((c,i)=>{ const info=E.kInfoPub(pub,c); const done=(pr.sw||[]).includes(i); return `<div class="kc"><div class="kt">${esc(info.t)}</div><div class="kv"><span>${info.v} fichas</span><button class="btn ghost" style="color:#1f1608" data-act="swapk" data-i="${i}" ${done?'disabled':''}>${done?'Trocado':'Trocar'}</button></div></div>`; }).join('')}${pTimer(pv)}</div>`;
       case 'shop': return `<div class="pcard" style="text-align:center"><h3>🕶️ Mercado Negro</h3><div class="muted">Contrato extra por 5 fichas (máximo 3 na mão). Tens ${pr.k.length}.</div>
@@ -1514,7 +1566,7 @@ function makePad(root, api){
     if(s==='vote' && pr.vote!=null) return waitBox('🗳️','Voto registado','À espera dos outros…');
     const map = {
       spin: `${name(pub.cro)} vai girar a roleta…`, betrev: 'A revelar as apostas na TV…', reveal: 'Olhem para a TV!', result: 'Resultado na TV',
-      intro: pv.type==='intro' ? 'As portas fecham-se… Vê os teus contratos secretos!' : 'Leiam as regras da prova na TV', judge: `${name(pv.alvo)} está a decidir quem acertou…`,
+      intro: pv.type==='intro' ? 'As portas fecham-se… Lê as regras na TV.' : 'Leiam as regras da prova na TV', kview: 'À espera que os outros leiam os contratos…', table: 'Classificação na TV', judge: `${name(pv.alvo)} está a decidir quem acertou…`,
       lie: `${name(pv.alvo)} está a preparar as histórias…`, tell: `Ouve as 3 histórias de ${name(pv.alvo)}. Podem fazer até 3 perguntas.`,
       deal: 'Vê o teu papel em cima ↑', words: pv.order ? `É a vez de ${name(pv.order[pv.wi % pv.order.length])} dizer uma palavra (volta ${pv.wi < pv.order.length ? 1 : 2})` : '',
       guess: `${name(pv.imp)} está a tentar adivinhar a palavra…`, pick: `${name(pv.picker)} está a escolher…`, pick1: `${name(pv.picker)} está a escolher…`,
@@ -1591,6 +1643,7 @@ function makePad(root, api){
       case 'judge': send({a:'judge', ok:judgeSel||[]}); judgeSel=null; break;
       case 'lie': send({a:'lie', i:+b.dataset.i}); break;
       case 'go': send({a:'go'}); break;
+      case 'read': send({a:'read'}); break;
       case 'vote': send({a:'vote', v: isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v}); break;
       case 'guess': { const v = ($('#guessI',root)||{}).value; if(v && v.trim()) send({a:'guess', v:v.trim()}); break; }
       case 'psel': { const k=+b.dataset.k, n=+b.dataset.n; if(pickSel.includes(k)) pickSel=pickSel.filter(x=>x!==k); else { pickSel.push(k); if(pickSel.length>n) pickSel.shift(); } render(); break; }
@@ -1909,6 +1962,7 @@ const TV = (()=>{
     // dinâmicos
     if(pv.type==='leilao' && pv.step==='play'){ const c=$('#cnt'); if(c && c.dataset.v!=String(pv.cnt)){ c.dataset.v=pv.cnt; c.firstChild.textContent = pv.cnt; Sound.clink(); } const pre=$('#prep'); if(pre){ const r=Math.ceil((pv.playAt-now)/1000); pre.textContent = r>0 ? `Prepara-te… ${r}` : 'VALENDO!'; } }
     if(pv.type==='qf' && pv.step==='play'){ const t = pv.temp||[]; const n=$('#needle'); if(n){ const last=t.slice(-6); let s=0,w=0; last.forEach((x,i)=>{ s+=x.v*(i+1); w+=i+1; }); const v = w? s/w : .5; n.style.left = `calc(${(v*100).toFixed(1)}% - .25em)`; const hc=$('#hc'); if(hc){ const L = t[t.length-1]; const key = L ? L.t+':'+L.v : ''; if(hc.dataset.k!==key){ hc.dataset.k=key; if(L){ hc.textContent = L.v?'🔥':'❄️'; hc.style.transform='scale(1.4)'; setTimeout(()=>hc.style.transform='',250); (L.v?Sound.hot:Sound.cold)(); } } } } const pre=$('#prep'); if(pre){ const r=Math.ceil((pv.playAt-now)/1000); pre.textContent = r>0 ? `Começa em ${r}…` : ''; } }
+    if(E.READ[pv.step]){ const rb=$('#readbar'); if(rb){ const h=readBarHtml(pv); if(rb.dataset.h!==h){ rb.dataset.h=h; rb.innerHTML=h; } } }
     if(pv.step==='bet'){ const n = Object.keys(pv.bets||{}).length; const el=$('#betn'); if(el) el.textContent = `${n}/${S.players.length} apostaram`; }
     if(['ans','vote','blind','jack'].includes(pv.step)){ const m = pv.step==='ans'?pv.ans:pv.step==='vote'?pv.votes:pv.step==='blind'?pv.bl:pv.jn; const tot = pv.step==='vote' ? S.players.filter((p,k)=>E.need(S,k)||((pv.votes||{})[k]!=null)).length : S.players.length; const el=$('#cntn'); if(el) el.textContent = `${Object.keys(m||{}).length}/${tot}`; }
     if(pv.step==='auc'){ const el=$('#auccur'); if(el && el.dataset.k!=String(pv.cur)){ stageKeyPrev=''; } }
@@ -1929,21 +1983,40 @@ const TV = (()=>{
     if(pv.cid==='trib') return `<div class="lead">${who(pv.alvo)} é acusado de ter <b class="gold">${esc(pv.crime)}</b>.</div>`;
     return '';
   };
+  // nos passos de "Li", junta a barra de quem já confirmou (atualizada em updStage)
   function buildStage(){
+    let h = buildStage0(); const pv = S.pv;
+    if(pv && E.READ[pv.step] && S.ph!=='lobby' && S.ph!=='end' && h) h = h.replace(/<\/div>\s*$/, '<div id="readbar" class="readbar"></div></div>');
+    return h;
+  }
+  function readBarHtml(pv){
+    const R = E.readers(S), rq = pv.rq || {};
+    return `<div class="row">${R.map(k=>`<span class="chip" style="${rq[k]?'box-shadow:inset 0 0 0 1.5px var(--green)':'opacity:.55'}">${S.players[k].av} ${esc(S.players[k].name)} ${rq[k]?'✅':'…'}</span>`).join('')}</div><div class="muted mini">📱 Cada um toca em <b>“Li”</b> no telemóvel quando tiver percebido · ${R.filter(k=>rq[k]).length}/${R.length}</div>`;
+  }
+  function buildStage0(){
     const pv = S.pv;
     if(S.ph==='lobby') return lobby();
     if(S.ph==='end') return endScreen();
     if(!pv) return '';
     const s = pv.step, t = pv.type;
-    const go = `<div class="muted mini">O Croupier ${who(S.cro)} pode avançar no telemóvel.</div>`;
+    const go = E.READ[s] ? '' : `<div class="muted mini">O Croupier ${who(S.cro)} pode avançar no telemóvel.</div>`;
+    if(t==='intro' && s==='kview') return `<div class="sg card deco-c slow-in"><div class="kicker">Antes de começar</div><div class="typeic">📜</div><h1>Olhem para o telemóvel</h1>
+      <p class="lead">Cada um tem <b class="gold">2 contratos secretos</b>: pequenas missões para cumprir durante a noite, sem ninguém perceber (por exemplo, fazer alguém dizer uma palavra).</p>
+      <div class="row" style="gap:2em;text-align:left;align-items:flex-start">
+        <div style="max-width:16em"><div class="gold serif" style="font-size:1.4em">✅ Cumpriste?</div><div class="muted">Carrega em “Cumpri!” no telemóvel. A mesa confirma e recebes as fichas do contrato.</div></div>
+        <div style="max-width:16em"><div class="gold serif" style="font-size:1.4em">🔎 Desconfias?</div><div class="muted">Acusa alguém (1 vez por ronda). Se acertares no contrato, ficas com as fichas. Se errares, pagas 3.</div></div></div>
+      <p class="lead">Leiam-nos com calma, sem mostrar a ninguém.</p></div>`;
+    if(t==='table'){ const tb = pv.tb||[]; return `<div class="sg card deco-c slow-in"><div class="kicker">Fim da ronda ${pv.rnd} de ${S.nR}</div><h1>📊 Classificação</h1>
+      <table class="tbl">${tb.map(([k,tot,d,prev],i)=>`<tr class="${i===0?'lead1':''}"><td>${i===0?'👑':i+1+'.º'}</td><td style="text-align:left">${S.players[k].av} <b>${esc(S.players[k].name)}</b> <span class="muted mini">${esc(S.players[k].nick||'')}</span> ${prev>i?'<span class="good">▲</span>':prev<i?'<span class="bad">▼</span>':''}</td><td><b class="gold">${tot}</b> fichas <span class="${d>0?'good':d<0?'bad':'muted'}" style="margin-left:.6em">${d>0?'+':''}${d}</span></td></tr>`).join('')}</table>
+      <div class="muted">${pv.last ? 'A seguir: a Grande Final!' : `A seguir: ronda ${pv.rnd+1} · fase ${pv.rnd+1 <= Math.ceil(S.nR/2) ? 'Aquecimento (apostas 1–5, prémio 3)' : 'Escalada (apostas 2–10, prémio 5)'}`}</div></div>`; }
     if(t==='intro') return `<div class="sg card deco-c slow-in"><div class="kicker">Sessão ${(liga.week||0)+1}${liga.season?` · Temporada ${liga.season}`:''}</div><h1>As portas fecham-se.</h1><p class="lead serif" style="font-style:italic">O que acontece no Clube fica no Clube.</p>
       ${S.law?`<div class="lawbox" style="font-size:1.3em">👑 Lei do Campeão (${esc(S.lawBy)}): “${esc(S.law)}”</div>`:''}
       <div class="row" style="gap:2em;text-align:left;align-items:flex-start;margin-top:.6em">
         <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">1. Roleta</div><div class="muted">O Croupier sorteia a prova.</div></div>
-        <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">2. Apostas</div><div class="muted">Todos apostam em segredo. Certo dobra; único a acertar triplica.</div></div>
+        <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">2. Apostas</div><div class="muted">Antes da prova, cada um aposta fichas no que acha que vai acontecer. Acertas: ganhas o que apostaste. Erras: perdes o que apostaste.</div></div>
         <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">3. Prova</div><div class="muted">Quem vence leva o prémio da fase.</div></div>
-        <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">📜 Contratos</div><div class="muted">Vejam os 2 contratos secretos no telemóvel. Cumpram-nos durante a noite!</div></div></div>
-      <div class="row">${S.nR} rondas + Grande Final · ${timerH(pv.dl)}</div>${go}</div>`;
+        <div style="max-width:15em"><div class="gold serif" style="font-size:1.5em">📜 Contratos</div><div class="muted">Missões secretas para cumprir durante a noite. Vão vê-las a seguir, no telemóvel.</div></div></div>
+      <div class="row">${S.nR} rondas + Grande Final · no fim de cada ronda aparece a classificação · ganha quem tiver mais fichas</div></div>`;
     if(s==='spin'){
       const keys = Object.keys(D.TYPES); const seg = 360/keys.length;
       const segs = keys.map((k,i)=>{ const a0=(i*seg-90)*Math.PI/180, a1=((i+1)*seg-90)*Math.PI/180; const x0=50+50*Math.cos(a0), y0=50+50*Math.sin(a0), x1=50+50*Math.cos(a1), y1=50+50*Math.sin(a1); const am=((i+.5)*seg-90)*Math.PI/180; const tx=50+33*Math.cos(am), ty=50+33*Math.sin(am);
@@ -1954,9 +2027,10 @@ const TV = (()=>{
         <div class="row muted mini">${keys.map(k=>`<span>${D.TYPES[k].ic} ${D.TYPES[k].n}</span>`).join(' · ')}</div></div>`;
     }
     if(s==='intro') return introCard(pv) ;
-    if(s==='bet') return `<div class="sg enter">${head(pv)}${pv.type==='final'?'':ctxQ(pv)}${betIntro(pv)}<h2 class="gold">Façam as vossas apostas</h2>
+    if(s==='bet') return `<div class="sg enter">${head(pv)}${pv.type==='final'?'':ctxQ(pv)}${betIntro(pv)}<h2 class="gold">💰 Apostas: ${esc(betQ(pv, k=>S.players[k].name))}</h2>
+      <div class="lead" style="font-size:1.05em">Cada um escolhe no telemóvel a resposta em que acredita e quantas fichas arrisca. Depois joga-se a prova.<br>✅ Acertar: <b class="good">ganhas o que apostaste</b> · 🎯 Único a acertar: <b class="good">ganhas o dobro</b> · ❌ Errar: <b class="bad">perdes o que apostaste</b></div>
       <div class="opts">${pv.bo.map(o=>`<div class="opt"><span class="l">${o.p!=null && o.l===S.players[o.p].name ? `${S.players[o.p].av} ${esc(o.l)}` : esc(o.l)}</span></div>`).join('')}</div>
-      <div class="row"><span id="betn" class="muted"></span>${timerH(pv.dl)}</div><div class="muted mini">Apostas ${S.ph==='final'?'mínimo metade das fichas':`entre ${E.lim(S).min} e ${E.lim(S).max}`} · certo dobra · único a acertar triplica${S.flags.infl===S.rnd&&S.ph==='play'?' · <b class="gold">INFLAÇÃO: tudo a dobrar</b>':''}</div></div>`;
+      <div class="row"><span id="betn" class="muted"></span>${timerH(pv.dl)}</div><div class="muted mini">Apostas ${S.ph==='final'?'mínimo metade das fichas':`entre ${E.lim(S).min} e ${E.lim(S).max} fichas`}${S.flags.infl===S.rnd&&S.ph==='play'?' · <b class="gold">INFLAÇÃO: tudo a dobrar</b>':''}</div></div>`;
     if(s==='betrev'){
       const ks = Object.keys(pv.bets); const at0 = pv.revAt + 900;
       const byOpt = {}; ks.forEach((k,i)=>{ const b=pv.bets[k]; (byOpt[b.o]=byOpt[b.o]||[]).push({k:+k, a:b.a, at: at0 + i*E.T.betEach}); });
@@ -2051,7 +2125,7 @@ const TV = (()=>{
   }
   function introCard(pv){
     const t = pv.type; let body = '';
-    const go = `<div class="row">${timerH(pv.dl)}</div><div class="muted mini">O Croupier ${who(S.cro)} pode avançar no telemóvel.</div>`;
+    const go = `<div class="lead" style="font-size:1em">Depois de toda a gente perceber: <b class="gold">apostas</b> (no telemóvel) → <b class="gold">prova</b> → resultado.</div>`;
     if(t==='qcq') body = `<div class="row">Alvo: ${who(pv.alvo)}</div>${ctxQ(pv)}<p class="lead muted">Primeiro apostem em quem vai acertar. Depois todos escrevem; ${nm(pv.alvo)} escreve a verdade. Se ninguém acertar, vence o Alvo.</p>`;
     if(t==='ment' && pv.sub==='2v') body = `${ctxQ(pv)}<p class="lead muted">${nm(pv.alvo)} vai contar 3 histórias: 2 verdadeiras e 1 inventada. Vencem os que descobrirem a mentira. Se a maioria errar, vence ${nm(pv.alvo)}.</p>`;
     if(t==='ment' && pv.sub==='imp') body = `<p class="lead">Todos vão receber a mesma palavra secreta, menos um: o Impostor. Cada um diz uma palavra relacionada. Descubram quem está a fazer bluff!</p>`;
@@ -2076,12 +2150,12 @@ const TV = (()=>{
     if(pv.cid==='trib') why = `<div class="lead">Veredicto: <b class="gold">${pv.verd==='cul'?'CULPADO':'INOCENTE'}</b></div>`;
     const res = pv.betRes || {};
     const ks = Object.keys(pv.bets||{});
-    const list = ks.map(k=>{ const v = res[k]; const b = pv.bets[k]; return `<span class="chip" style="${v>0?'box-shadow:inset 0 0 0 1.5px var(--green)':v<0?'opacity:.6':''}">${S.players[k].av} ${v>0?`<b style="color:var(--green)">+${v}</b>`:v<0?`<b style="color:#ff8a86">${v}</b>`:'0'}${res.az===+k?' 🎯':''}${res.so===+k?' 🛟':''}</span>`; }).join('');
+    const optL = id => { const o = (pv.bo||[]).find(x=>x.id===id); return o ? (o.p!=null && o.l===S.players[o.p].name ? S.players[o.p].av+' '+o.l : o.l) : id; };
+    const list = `<table class="tbl" style="font-size:1em">${ks.map(k=>{ const v = res[k]; const b = pv.bets[k]; return `<tr><td>${S.players[k].av}</td><td style="text-align:left"><b>${esc(S.players[k].name)}</b> <span class="muted">apostou ${b.a} em</span> ${esc(optL(b.o))}</td><td>${v>0?`<b class="good">✅ +${v}</b>`:v<0?`<b class="bad">❌ ${v}</b>`:'0'}${res.az===+k?' 🎯':''}${res.so===+k?' 🛟':''}</td></tr>`; }).join('')}</table>`;
     return `<div class="sg card deco-c enter"><div class="kicker">Resultado</div>${why}
       ${pv.W && pv.W.length ? `<div class="row" style="font-size:1.8em">${pv.W.map(k=>`<span class="who crown">${S.players[k].av} ${esc(S.players[k].name)}</span>`).join(' ')}</div>${pv.prize?`<h2 class="gold">+${pv.prize} fichas de prémio</h2>`:''}` : `<h2 class="muted">Ninguém venceu a prova</h2>`}
       ${res.az!=null ? `<h2>🎯 Golpe do Azarão: ${who(res.az)} foi o único a acertar!</h2>` : ''}
-      ${ks.length?`<div class="kicker" style="margin-top:.4em">Apostas</div><div class="row">${list}</div>`:''}
-      <div class="muted mini">Próxima ronda em breve · o Croupier pode avançar</div></div>`;
+      ${ks.length?`<div class="kicker" style="margin-top:.4em">Apostas</div>${list}`:''}</div>`;
   }
   // ---------- lobby ----------
   function lobby(){
